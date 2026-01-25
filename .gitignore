@@ -5,3 +5,80 @@ node_modules
 /src/generated/
 
 autogen.routes.ts
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+bun.lock.db
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+coverage/
+
+# Generated files
+/src/generated/
+autogen.routes.ts
+prisma/migrations/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Testing
+.nyc_output/
+.coverage/
+.mocha.env
+
+# Misc
+.turbo/
+.cache/
+*.bak
+*.backup

@@ -11,10 +11,11 @@ export const app = new Elysia()
 	.use(swagger())
 	.use(
 		cors({
-			origin: "*", // env.get("FE_URL").asString(),
+			origin: ["http://localhost:3000", "http://localhost:8080", "*"],
 			methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 			credentials: true,
-			allowedHeaders: ["Content-Type", "Authorization"],
+			allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+			exposedHeaders: ["set-cookie", "set-auth-token"],
 		}),
 	)
 	.use(serverTiming())
@@ -27,5 +28,10 @@ export const app = new Elysia()
 			},
 		}),
 	)
+	// Mount Better Auth handler
+	.all("/api/auth/*", (ctx) => {
+		console.log('Better Auth route:', ctx.request.url);
+		return auth.handler(ctx.request);
+	})
 
 export type App = typeof app;

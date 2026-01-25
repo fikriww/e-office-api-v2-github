@@ -1,37 +1,30 @@
-# use the official Bun image
-# see all versions at https://hub.docker.com/r/oven/bun/tags
 FROM oven/bun:1.3.2 AS base
 WORKDIR /usr/src/app
 
-# install dependencies into temp directory
-# this will cache them and speed up future builds
+# install dependencies
 FROM base AS install
-RUN mkdir -p /temp/dev
-COPY package.json bun.lock /temp/dev/
-RUN cd /temp/dev && bun install --frozen-lockfile
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+COPY package.json bun.lock ./
+RUN bun install
 
-# install with --production (exclude devDependencies)
-RUN mkdir -p /temp/prod
-COPY package.json bun.lock /temp/prod/
-RUN cd /temp/prod && bun install --frozen-lockfile --production
+# build stage
+FROM base AS builder
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+COPY --from=install /usr/src/app/node_modules ./node_modules
+COPY package.json bun.lock tsconfig.json ./
+COPY src ./src
+COPY prisma ./prisma
+ENV NODE_ENV=production
 
-# copy node_modules from temp directory
-# then copy all (non-ignored) project files into the image
-FROM base AS prerelease
-COPY --from=install /temp/dev/node_modules node_modules
-COPY . .
+# runtime stage
+FROM base AS release
+RUN apt-get update && apt-get install -y python3 && rm -rf /var/lib/apt/lists/*
+COPY --from=install /usr/src/app/node_modules ./node_modules
+COPY --from=builder /usr/src/app/package.json /usr/src/app/bun.lock /usr/src/app/tsconfig.json ./
+COPY --from=builder /usr/src/app/src ./src
+COPY --from=builder /usr/src/app/prisma ./prisma
 
 ENV NODE_ENV=production
-RUN bun x tsc --noEmit
-
-# copy production dependencies and source code into final image
-FROM base AS release
-COPY --from=install /temp/prod/node_modules node_modules
-COPY --from=prerelease /usr/src/app/bun.lock .
-RUN mkdir -p /usr/src/app/src
-COPY --from=prerelease /usr/src/app/src ./src
-COPY --from=prerelease /usr/src/app/package.json .
-COPY --from=prerelease /usr/src/app/tsconfig.json .
-COPY --from=prerelease /usr/src/app/prisma ./prisma
+EXPOSE 3000
 
 ENTRYPOINT [ "bun", "start" ]

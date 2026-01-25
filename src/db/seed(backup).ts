@@ -1,6 +1,5 @@
 import { Prisma } from "@backend/db/index.ts";
 import { randomBytes, scryptSync } from "crypto";
-import { hashPassword } from "better-auth/crypto";
 
 import { auth } from "@backend/lib/auth.ts";
 
@@ -533,7 +532,7 @@ async function main() {
 		update: {},
 		create: {
 			name: "S1 Statistika",
-			code: "240503",
+			code: "240103",
 			departemenId: departemenStatistika.id,
 		},
 	});
@@ -588,231 +587,31 @@ async function main() {
 
 	console.log("Created program studi");
 
-	// Create Superadmin Account
-	try {
-		// Hash the password using Better Auth's password hashing
-		const hashedPassword = await hashPassword("password1234");
-
-		const superAdminUser = await Prisma.user.upsert({
-			where: { email: "superadmin@fsm.internal" },
-			update: { emailVerified: true },
-			create: {
-				email: "superadmin@fsm.internal",
-				name: "Super Admin",
-				emailVerified: true,
-			},
-		});
-
-		// Upsert account with hashed password
-		const existingAccount = await Prisma.account.findFirst({
-			where: {
-				accountId: superAdminUser.email,
-				providerId: "credential",
-			},
-		});
-
-		if (existingAccount) {
-			await Prisma.account.update({
-				where: { id: existingAccount.id },
-				data: {
-					password: hashedPassword,
-				},
-			});
-		} else {
-			await Prisma.account.create({
-				data: {
-					id: randomBytes(16).toString("hex"),
-					accountId: superAdminUser.email,
-					providerId: "credential",
-					userId: superAdminUser.id,
-					password: hashedPassword,
-				},
-			});
-		}
-
-		const existingRole = await Prisma.userRole.findFirst({
-			where: {
-				userId: superAdminUser.id,
-				roleId: superAdminRole.id,
-			},
-		});
-
-		if (!existingRole) {
-			await Prisma.userRole.create({
-				data: {
-					userId: superAdminUser.id,
-					roleId: superAdminRole.id,
-				},
-			});
-		}
-
-		console.log("✓ Created/updated superadmin user");
-	} catch (error) {
-		console.log("✗ Error with superadmin user:", error);
-	}
-
-	// Create demo users for each role
-	const demoUsers = [
-		{
-			email: "mahasiswa@demo.local",
-			name: "Mahasiswa Demo",
-			roleId: mahasiswaRole.id,
-			type: "mahasiswa",
-			additionalData: {
-				nim: "24060122000001",
-				tahunMasuk: "2022",
-				noHp: "081234567890",
-				programStudiId: prodiInformatika.id,
-				departemenId: departemenInformatika.id,
-			},
+	// Create Users
+	const adminUser = await Prisma.user.create({
+		data: {
+			name: "Admin Sistem",
+			email: "admin@university.ac.id",
+			emailVerified: true,
 		},
-		{
-			email: "sa@demo.local",
-			name: "Supervisor Akademik",
-			roleId: supervisorAkademikRole.id,
-			type: "pegawai",
-			additionalData: {
-				nip: "198501012010121001",
-				jabatan: "Supervisor Akademik",
-				noHp: "081234567891",
-				programStudiId: prodiInformatika.id,
-				departemenId: departemenInformatika.id,
-			},
+	});
+
+	// Create Account
+
+	const response = await auth.api.signUpEmail({
+		body: {
+			email: "superadmin@fsm.internal",
+			password: "password1234",
+			name: "Admin",
 		},
-		{
-			email: "mtu@demo.local",
-			name: "Manajer TU",
-			roleId: managerTURole.id,
-			type: "pegawai",
-			additionalData: {
-				nip: "198601012011121001",
-				jabatan: "Manajer Tata Usaha",
-				noHp: "081234567892",
-				programStudiId: prodiFSM.id,
-				departemenId: departemenFsm.id,
-			},
+	});
+
+	await Prisma.userRole.create({
+		data: {
+			userId: response.user.id,
+			roleId: superAdminRole.id,
 		},
-		{
-			email: "upa@demo.local",
-			name: "UPA Demo",
-			roleId: upaRole.id,
-			type: "pegawai",
-			additionalData: {
-				nip: "198701012012121001",
-				jabatan: "Unit Pelaksana Akademik",
-				noHp: "081234567893",
-				programStudiId: prodiFSM.id,
-				departemenId: departemenFsm.id,
-			},
-		},
-	];
-
-	for (const demoUser of demoUsers) {
-		try {
-			// Hash the password using Better Auth's password hashing
-			const hashedPassword = await hashPassword("password1234");
-
-			// Upsert user
-			const user = await Prisma.user.upsert({
-				where: { email: demoUser.email },
-				update: { emailVerified: true },
-				create: {
-					email: demoUser.email,
-					name: demoUser.name,
-					emailVerified: true,
-				},
-			});
-
-			// Upsert account with hashed password
-			const existingAccount = await Prisma.account.findFirst({
-				where: {
-					accountId: user.email,
-					providerId: "credential",
-				},
-			});
-
-			if (existingAccount) {
-				await Prisma.account.update({
-					where: { id: existingAccount.id },
-					data: {
-						password: hashedPassword,
-					},
-				});
-			} else {
-				await Prisma.account.create({
-					data: {
-						id: randomBytes(16).toString("hex"),
-						accountId: user.email,
-						providerId: "credential",
-						userId: user.id,
-						password: hashedPassword,
-					},
-				});
-			}
-
-			// Check if role already assigned
-			const existingRole = await Prisma.userRole.findFirst({
-				where: {
-					userId: user.id,
-					roleId: demoUser.roleId,
-				},
-			});
-
-			if (!existingRole) {
-				await Prisma.userRole.create({
-					data: {
-						userId: user.id,
-						roleId: demoUser.roleId,
-					},
-				});
-			}
-
-			// Create or upsert mahasiswa or pegawai record
-			if (demoUser.type === "mahasiswa") {
-				await Prisma.mahasiswa.upsert({
-					where: { userId: user.id },
-					update: {
-						nim: demoUser.additionalData.nim,
-						tahunMasuk: demoUser.additionalData.tahunMasuk,
-						noHp: demoUser.additionalData.noHp,
-						programStudiId: demoUser.additionalData.programStudiId,
-						departemenId: demoUser.additionalData.departemenId,
-					},
-					create: {
-						userId: user.id,
-						nim: demoUser.additionalData.nim,
-						tahunMasuk: demoUser.additionalData.tahunMasuk,
-						noHp: demoUser.additionalData.noHp,
-						programStudiId: demoUser.additionalData.programStudiId,
-						departemenId: demoUser.additionalData.departemenId,
-					},
-				});
-			} else if (demoUser.type === "pegawai") {
-				await Prisma.pegawai.upsert({
-					where: { userId: user.id },
-					update: {
-						nip: demoUser.additionalData.nip,
-						jabatan: demoUser.additionalData.jabatan,
-						noHp: demoUser.additionalData.noHp,
-						programStudiId: demoUser.additionalData.programStudiId,
-						departemenId: demoUser.additionalData.departemenId,
-					},
-					create: {
-						userId: user.id,
-						nip: demoUser.additionalData.nip,
-						jabatan: demoUser.additionalData.jabatan,
-						noHp: demoUser.additionalData.noHp,
-						programStudiId: demoUser.additionalData.programStudiId,
-						departemenId: demoUser.additionalData.departemenId,
-					},
-				});
-			}
-
-			console.log(`✓ Created/updated demo user: ${demoUser.email}`);
-		} catch (error) {
-			console.log(`✗ User ${demoUser.email} error:`, error);
-		}
-	}
+	});
 
 	console.log("Assigned roles to users");
 }

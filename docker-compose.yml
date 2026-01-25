@@ -1,24 +1,69 @@
 services:
-    bot:
-                container_name: e-office-api-v2-bot
-                restart: unless-stopped
-                build:
-                    context: .
-                    dockerfile: Dockerfile
-                environment:
-                    - NODE_ENV=production
     postgres:
-                container_name: e-office-api-v2-postgres
-                image: postgres:latest
-                restart: unless-stopped
-                environment:
-                    - POSTGRES_USER=e-office-api-v2
-                    - POSTGRES_PASSWORD=90d467e0d673bc1a8fba21ed
-                    - POSTGRES_DB=e-office-api-v2
-                volumes:
-                    - postgres_data:/var/lib/postgresql/data
+        container_name: e-office-api-v2-postgres
+        image: postgres:16-alpine
+        restart: unless-stopped
+        environment:
+            - POSTGRES_USER=e-office-api-v2
+            - POSTGRES_PASSWORD=90d467e0d673bc1a8fba21ed
+            - POSTGRES_DB=e-office-api-v2
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
+        ports:
+            - "5432:5432"
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U e-office-api-v2"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    pgadmin:
+        container_name: e-office-api-v2-pgadmin
+        image: dpage/pgadmin4:latest
+        restart: unless-stopped
+        environment:
+            - PGADMIN_DEFAULT_EMAIL=admin@example.com
+            - PGADMIN_DEFAULT_PASSWORD=admin
+        ports:
+            - "5050:80"
+        depends_on:
+            postgres:
+                condition: service_healthy
+
+    minio:
+        container_name: e-office-api-v2-minio
+        image: minio/minio:latest
+        restart: unless-stopped
+        environment:
+            - MINIO_ROOT_USER=minioadmin
+            - MINIO_ROOT_PASSWORD=minioadmin
+        volumes:
+            - minio_data:/data
+        ports:
+            - "9000:9000"
+            - "9001:9001"
+        command: server /data --console-address ":9001"
+
+    bot:
+        container_name: e-office-api-v2-bot
+        restart: unless-stopped
+        build:
+            context: .
+            dockerfile: Dockerfile
+        environment:
+            - NODE_ENV=production
+            - DATABASE_URL=postgresql://e-office-api-v2:90d467e0d673bc1a8fba21ed@postgres:5432/e-office-api-v2
+        ports:
+            - "3000:3000"
+        depends_on:
+            postgres:
+                condition: service_healthy
+            minio:
+                condition: service_started
+
 volumes:
     postgres_data:
-    
+    minio_data:
+
 networks:
     default: {}
