@@ -815,6 +815,25 @@ async function main() {
 	}
 
 	console.log("Assigned roles to users");
+
+	// Seed Letter Types
+	console.log("\n--- Seeding Letter Types ---");
+	
+	const ak006LetterType = await Prisma.letterType.upsert({
+		where: { id: "ak006-letter-type" },
+		update: {
+			name: "AK006",
+			description: "Surat Pernyataan Masih Kuliah",
+		},
+		create: {
+			id: "ak006-letter-type",
+			name: "AK006",
+			description: "Surat Pernyataan Masih Kuliah",
+		},
+	});
+	console.log(`✓ Created/updated letter type: ${ak006LetterType.name}`);
+
+	console.log("\n=== Database seeding completed! ===");
 }
 
 main()

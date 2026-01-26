@@ -153,10 +153,15 @@ model User {
   mahasiswa Mahasiswa?
   pegawai   Pegawai?
 
-  userRole       UserRole[]
-  sessions       Session[]
-  accounts       Account[]
-  LetterInstance LetterInstance[]
+  userRole UserRole[]
+  sessions Session[]
+  accounts Account[]
+
+  // Letter relations
+  createdLetters  LetterInstance[]       @relation("CreatedLetters")
+  archivedLetters LetterInstance[]       @relation("ArchivedLetters")
+  approvalSteps   LetterApprovalStep[]   @relation("ApprovalStepActor")
+  signatures      Signature[]
 
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt
@@ -304,16 +309,81 @@ model LetterInstance {
   schema      Json
   values      Json
   status      LetterStatus @default(PENDING)
-  currentStep Int?
+  currentStep Int          @default(1)
+
+  // Letter numbering (set by UPA at finalization)
+  letterNumber String? @map("letter_number")
+
+  // Signature (set by MTU when signing)
+  signatureUrl String? @map("signature_url")
+
+  // Final document URL (generated after signing)
+  finalDocumentUrl String? @map("final_document_url")
+
+  // Archive info (set by UPA)
+  archivedAt   DateTime? @map("archived_at")
+  archivedById String?   @map("archived_by_id")
+  archivedBy   User?     @relation("ArchivedLetters", fields: [archivedById], references: [id])
 
   letterTypeId String
   letterType   LetterType @relation(fields: [letterTypeId], references: [id])
   createdById  String
-  createdBy    User       @relation(fields: [createdById], references: [id])
+  createdBy    User       @relation("CreatedLetters", fields: [createdById], references: [id])
+
+  approvalSteps LetterApprovalStep[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  @@map("letter_instance")
+}
+
+// Approval workflow steps
+model LetterApprovalStep {
+  id String @id @default(cuid())
+
+  letterInstanceId String
+  letterInstance   LetterInstance @relation(fields: [letterInstanceId], references: [id], onDelete: Cascade)
+
+  // Step number: 1 = SA verification, 2 = MTU signing, 3 = UPA numbering
+  stepNumber Int @map("step_number")
+
+  status   ApprovalStepStatus @default(PENDING)
+  comments String? // Feedback or revision notes
+
+  // Actor who performed the action
+  actorId   String? @map("actor_id")
+  actor     User?   @relation("ApprovalStepActor", fields: [actorId], references: [id])
+  actorRole String? @map("actor_role")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime? @updatedAt
+
+  @@map("letter_approval_step")
+}
+
+enum ApprovalStepStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVISION
+
+  @@map("approval_step_status")
+}
+
+// Signature storage for MTU
+model Signature {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  imageUrl  String  @map("image_url")
+  isDefault Boolean @default(false) @map("is_default")
 
   createdAt DateTime @default(now())
 
-  @@map("letter_instance")
+  @@map("signature")
 }
 
 enum LetterStatus {
