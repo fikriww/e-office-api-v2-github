@@ -210,7 +210,7 @@ export abstract class LetterInstanceService {
     }
 
     // Push latest for steps 1..3 or future placeholder
-    const maxStep = letter.status === "COMPLETED" ? 4 : 3;
+    const maxStep = 3; // Always only show steps 1-3 in the loop
     for (let stepNum = 1; stepNum <= maxStep; stepNum++) {
       const latest = latestByStep.get(stepNum);
       const meta = stepMeta[stepNum] || { role: `Step ${stepNum}`, roleName: "Unknown", action: "Unknown action" };
