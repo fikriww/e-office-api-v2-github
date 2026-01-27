@@ -20,12 +20,26 @@ export default new Elysia()
       ...requireRole("manager_tu"),
     }
   )
+  // Get letters processed by MTU (signed and moved forward)
+  .get(
+    "/processed",
+    async ({ user, status }) => {
+      const letters = await LetterInstanceService.getProcessedByStep(STEP_MTU, LETTER_TYPE_AK006);
+      return {
+        success: true,
+        data: letters,
+      };
+    },
+    {
+      ...requireRole("manager_tu"),
+    }
+  )
   // Get letter timeline
   .get(
     "/:id/timeline",
     async ({ params: { id }, status }) => {
       const letter = await LetterInstanceService.getById(id);
-      
+
       if (!letter) {
         return status(404, { success: false, message: "Letter not found" });
       }
@@ -49,7 +63,7 @@ export default new Elysia()
     "/:id",
     async ({ params: { id }, status }) => {
       const letter = await LetterInstanceService.getById(id);
-      
+
       if (!letter) {
         return status(404, { success: false, message: "Letter not found" });
       }
@@ -85,7 +99,7 @@ export default new Elysia()
 
       // Get signature URL - either from request or from user's default signature
       let signatureUrl = body.signatureUrl;
-      
+
       if (!signatureUrl && body.signatureId) {
         const signature = await SignatureService.getById(body.signatureId);
         if (signature && signature.userId === user.id) {

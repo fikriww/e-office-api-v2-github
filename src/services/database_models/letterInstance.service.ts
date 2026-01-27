@@ -12,6 +12,37 @@ export const STEP_UPA = 3;
 
 export abstract class LetterInstanceService {
   /**
+   * Generate temporary agenda number on letter creation
+   * Format: [queue]/UN7.F8.4/AK/TBD/[year]
+   * - queue: Sequential queue number for the year
+   * - TBD: Placeholder for the final UPA number
+   * - year: Current year
+   */
+  static async generateTemporaryAgenda(): Promise<string> {
+    const now = new Date();
+    const year = now.getFullYear();
+
+    // Count all letters created in current year (including those without letterNumber)
+    const startOfYear = new Date(year, 0, 1);
+    const endOfYear = new Date(year, 11, 31, 23, 59, 59);
+
+    const count = await Prisma.letterInstance.count({
+      where: {
+        createdAt: {
+          gte: startOfYear,
+          lte: endOfYear,
+        },
+      },
+    });
+
+    const queueNumber = count + 1;
+    const queuePadded = queueNumber.toString().padStart(3, "0");
+
+    // Format: [queue]/UN7.F8.4/AK/TBD/[year]
+    return `${queuePadded}/UN7.F8.4/AK/TBD/${year}`;
+  }
+
+  /**
    * Create a new letter instance with initial approval steps
    * - Step 0: Mahasiswa submission (auto-approved)
    * - Step 1: SA verification (pending)
@@ -22,6 +53,9 @@ export abstract class LetterInstanceService {
     schema: object;
     values: object;
   }) {
+    // Generate temporary agenda number
+    const temporaryAgenda = await this.generateTemporaryAgenda();
+
     // Create letter instance with mahasiswa submission step and first approval step (SA)
     return Prisma.letterInstance.create({
       data: {
@@ -31,6 +65,7 @@ export abstract class LetterInstanceService {
         values: data.values,
         status: "PENDING",
         currentStep: STEP_SA,
+        temporaryAgenda,
         approvalSteps: {
           create: [
             {
@@ -62,6 +97,7 @@ export abstract class LetterInstanceService {
       },
     });
   }
+
 
   /**
    * Get letter by ID with all relations
@@ -118,58 +154,83 @@ export abstract class LetterInstanceService {
     };
 
     // Build timeline from approval steps
-    const timeline = [];
+    const timeline = [] as Array<{
+      step: number;
+      role: string;
+      roleName: string;
+      actor?: string | null;
+      action: string;
+      status: string;
+      statusLabel: string;
+      date?: Date | null;
+      comments?: string | null;
+      isCompleted: boolean;
+      isCurrent: boolean;
+      isRejected: boolean;
+      isRevision: boolean;
+      isFuture?: boolean;
+    }>;
 
-    // Get all steps sorted by creation date
-    const sortedSteps = [...(letter.approvalSteps || [])].sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
+    const steps = letter.approvalSteps || [];
 
-    // Track seen step numbers for non-mahasiswa steps (to avoid duplicates for SA/MTU/UPA)
-    const seenNonZeroSteps = new Set<number>();
+    // Step 0 entries: show all, ordered by createdAt
+    const step0Entries = steps
+      .filter((s) => s.stepNumber === 0)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-    for (const step of sortedSteps) {
-      const stepNumber = step.stepNumber;
-      
-      // For step 0 (mahasiswa actions), show all entries
-      // For other steps, only show the latest one per step number
-      if (stepNumber !== 0 && seenNonZeroSteps.has(stepNumber)) {
-        continue;
-      }
-      if (stepNumber !== 0) {
-        seenNonZeroSteps.add(stepNumber);
-      }
-
-      const meta = stepMeta[stepNumber] || { role: `Step ${stepNumber}`, roleName: "Unknown", action: "Unknown action" };
-      
-      // For step 0, check if this is a revision (has comments about changing details)
+    for (const step of step0Entries) {
+      const meta = stepMeta[0];
       let action = meta.action;
-      if (stepNumber === 0 && step.comments?.includes("Mengubah detail")) {
-        action = "Mengubah detail surat";
-      }
-      
+      if (step.comments?.includes("Mengubah detail")) action = "Mengubah detail surat";
       timeline.push({
-        step: stepNumber,
+        step: 0,
         role: meta.role,
         roleName: meta.roleName,
-        actor: step.actor?.name || (stepNumber === 0 ? letter.createdBy?.name : null),
+        actor: step.actor?.name || letter.createdBy?.name,
         action,
         status: step.status,
         statusLabel: statusLabels[step.status] || step.status,
         date: step.updatedAt || step.createdAt,
         comments: step.comments,
         isCompleted: step.status === "APPROVED",
-        isCurrent: stepNumber === letter.currentStep && step.status === "PENDING",
+        isCurrent: false,
         isRejected: step.status === "REJECTED",
         isRevision: step.status === "REVISION",
       });
     }
 
-    // Add future steps that haven't been created yet
+    // Latest entry per non-zero step (1,2,3) by updatedAt/createdAt
+    const latestByStep = new Map<number, typeof steps[0]>();
+    for (const s of steps.filter((x) => x.stepNumber !== 0)) {
+      const key = s.stepNumber;
+      const prev = latestByStep.get(key);
+      const sTime = new Date(s.updatedAt || s.createdAt).getTime();
+      const prevTime = prev ? new Date(prev.updatedAt || prev.createdAt).getTime() : -Infinity;
+      if (!prev || sTime >= prevTime) latestByStep.set(key, s);
+    }
+
+    // Push latest for steps 1..3 or future placeholder
     const maxStep = letter.status === "COMPLETED" ? 4 : 3;
     for (let stepNum = 1; stepNum <= maxStep; stepNum++) {
-      if (!seenNonZeroSteps.has(stepNum)) {
-        const meta = stepMeta[stepNum] || { role: `Step ${stepNum}`, roleName: "Unknown", action: "Unknown action" };
+      const latest = latestByStep.get(stepNum);
+      const meta = stepMeta[stepNum] || { role: `Step ${stepNum}`, roleName: "Unknown", action: "Unknown action" };
+      if (latest) {
+        timeline.push({
+          step: stepNum,
+          role: meta.role,
+          roleName: meta.roleName,
+          actor: latest.actor?.name || null,
+          action: meta.action,
+          status: latest.status,
+          statusLabel: statusLabels[latest.status] || latest.status,
+          date: latest.updatedAt || latest.createdAt,
+          comments: latest.comments,
+          isCompleted: latest.status === "APPROVED",
+          isCurrent: stepNum === letter.currentStep && latest.status === "PENDING",
+          isRejected: latest.status === "REJECTED",
+          isRevision: latest.status === "REVISION",
+        });
+      } else {
         timeline.push({
           step: stepNum,
           role: meta.role,
@@ -188,18 +249,6 @@ export abstract class LetterInstanceService {
         });
       }
     }
-
-    // Sort timeline: step 0 entries first (in order), then step 1, 2, 3, etc.
-    // We need to preserve the chronological order while grouping
-    timeline.sort((a, b) => {
-      // First sort by step number
-      if (a.step !== b.step) return a.step - b.step;
-      // For same step number, sort by date (older first)
-      if (a.date && b.date) {
-        return new Date(a.date).getTime() - new Date(b.date).getTime();
-      }
-      return 0;
-    });
 
     // Add final step for completed letters
     if (letter.status === "COMPLETED") {
@@ -279,6 +328,12 @@ export abstract class LetterInstanceService {
       status: {
         in: ["PENDING", "IN_PROGRESS"],
       },
+      approvalSteps: {
+        some: {
+          stepNumber: stepNumber,
+          status: "PENDING",
+        },
+      },
     };
 
     if (letterTypeName) {
@@ -312,6 +367,56 @@ export abstract class LetterInstanceService {
   }
 
   /**
+   * Get letters that have been processed by a specific step (already approved)
+   * This returns letters where currentStep > stepNumber, meaning they've passed this step
+   */
+  static async getProcessedByStep(stepNumber: number, letterTypeName?: string) {
+    const whereClause: any = {
+      OR: [
+        // Letters that have moved past this step
+        { currentStep: { gt: stepNumber } },
+        // Letters that are completed
+        { status: "COMPLETED" },
+      ],
+      approvalSteps: {
+        some: {
+          stepNumber: stepNumber,
+          status: "APPROVED",
+        },
+      },
+    };
+
+    if (letterTypeName) {
+      whereClause.letterType = { name: letterTypeName };
+    }
+
+    return Prisma.letterInstance.findMany({
+      where: whereClause,
+      include: {
+        letterType: true,
+        createdBy: {
+          include: {
+            mahasiswa: {
+              include: {
+                departemen: true,
+                programStudi: true,
+              },
+            },
+          },
+        },
+        approvalSteps: {
+          orderBy: {
+            stepNumber: "asc",
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+  }
+
+  /**
    * Approve current step and move to next step
    */
   static async approveStep(
@@ -320,61 +425,67 @@ export abstract class LetterInstanceService {
     actorRole: string,
     comments?: string
   ) {
-    const letter = await this.getById(letterId);
-    if (!letter) throw new Error("Letter not found");
+    return Prisma.$transaction(async (tx) => {
+      const letter = await tx.letterInstance.findUnique({ where: { id: letterId } });
+      if (!letter) throw new Error("Letter not found");
 
-    const currentStep = letter.currentStep;
+      const currentStep = letter.currentStep;
 
-    // Update only the PENDING step at current step number to APPROVED
-    await Prisma.letterApprovalStep.updateMany({
-      where: {
-        letterInstanceId: letterId,
-        stepNumber: currentStep,
-        status: "PENDING",
-      },
-      data: {
-        status: "APPROVED",
-        actorId,
-        actorRole,
-        comments,
-        updatedAt: new Date(),
-      },
-    });
+      // Update only the PENDING step at current step number to APPROVED
+      const res = await tx.letterApprovalStep.updateMany({
+        where: {
+          letterInstanceId: letterId,
+          stepNumber: currentStep,
+          status: "PENDING",
+        },
+        data: {
+          status: "APPROVED",
+          actorId,
+          actorRole,
+          comments,
+          updatedAt: new Date(),
+        },
+      });
 
-    // Determine next step
-    const nextStep = currentStep + 1;
+      if (res.count === 0) {
+        throw new Error("No pending step to approve at current step");
+      }
 
-    if (nextStep > STEP_UPA) {
-      // All steps completed
-      return Prisma.letterInstance.update({
+      // Determine next step
+      const nextStep = currentStep + 1;
+
+      if (nextStep > STEP_UPA) {
+        // All steps completed
+        return tx.letterInstance.update({
+          where: { id: letterId },
+          data: {
+            status: "COMPLETED",
+            updatedAt: new Date(),
+          },
+          include: {
+            approvalSteps: true,
+          },
+        });
+      }
+
+      // Create next step and update letter
+      return tx.letterInstance.update({
         where: { id: letterId },
         data: {
-          status: "COMPLETED",
+          currentStep: nextStep,
+          status: "IN_PROGRESS",
           updatedAt: new Date(),
+          approvalSteps: {
+            create: {
+              stepNumber: nextStep,
+              status: "PENDING",
+            },
+          },
         },
         include: {
           approvalSteps: true,
         },
       });
-    }
-
-    // Create next step and update letter
-    return Prisma.letterInstance.update({
-      where: { id: letterId },
-      data: {
-        currentStep: nextStep,
-        status: "IN_PROGRESS",
-        updatedAt: new Date(),
-        approvalSteps: {
-          create: {
-            stepNumber: nextStep,
-            status: "PENDING",
-          },
-        },
-      },
-      include: {
-        approvalSteps: true,
-      },
     });
   }
 
@@ -387,37 +498,43 @@ export abstract class LetterInstanceService {
     actorRole: string,
     comments: string
   ) {
-    const letter = await this.getById(letterId);
-    if (!letter) throw new Error("Letter not found");
+    return Prisma.$transaction(async (tx) => {
+      const letter = await tx.letterInstance.findUnique({ where: { id: letterId } });
+      if (!letter) throw new Error("Letter not found");
 
-    const currentStep = letter.currentStep;
+      const currentStep = letter.currentStep;
 
-    // Update only the PENDING step at current step number to REJECTED
-    await Prisma.letterApprovalStep.updateMany({
-      where: {
-        letterInstanceId: letterId,
-        stepNumber: currentStep,
-        status: "PENDING",
-      },
-      data: {
-        status: "REJECTED",
-        actorId,
-        actorRole,
-        comments,
-        updatedAt: new Date(),
-      },
-    });
+      // Update only the PENDING step at current step number to REJECTED
+      const res = await tx.letterApprovalStep.updateMany({
+        where: {
+          letterInstanceId: letterId,
+          stepNumber: currentStep,
+          status: "PENDING",
+        },
+        data: {
+          status: "REJECTED",
+          actorId,
+          actorRole,
+          comments,
+          updatedAt: new Date(),
+        },
+      });
 
-    // Update letter status to REJECTED
-    return Prisma.letterInstance.update({
-      where: { id: letterId },
-      data: {
-        status: "REJECTED",
-        updatedAt: new Date(),
-      },
-      include: {
-        approvalSteps: true,
-      },
+      if (res.count === 0) {
+        throw new Error("No pending step to reject at current step");
+      }
+
+      // Update letter status to REJECTED
+      return tx.letterInstance.update({
+        where: { id: letterId },
+        data: {
+          status: "REJECTED",
+          updatedAt: new Date(),
+        },
+        include: {
+          approvalSteps: true,
+        },
+      });
     });
   }
 
@@ -430,44 +547,50 @@ export abstract class LetterInstanceService {
     actorRole: string,
     comments: string
   ) {
-    const letter = await this.getById(letterId);
-    if (!letter) throw new Error("Letter not found");
+    return Prisma.$transaction(async (tx) => {
+      const letter = await tx.letterInstance.findUnique({ where: { id: letterId } });
+      if (!letter) throw new Error("Letter not found");
 
-    const currentStep = letter.currentStep;
+      const currentStep = letter.currentStep;
 
-    // Update only the PENDING step at current step number to REVISION
-    await Prisma.letterApprovalStep.updateMany({
-      where: {
-        letterInstanceId: letterId,
-        stepNumber: currentStep,
-        status: "PENDING",
-      },
-      data: {
-        status: "REVISION",
-        actorId,
-        actorRole,
-        comments,
-        updatedAt: new Date(),
-      },
-    });
+      // Update only the PENDING step at current step number to REVISION
+      const res = await tx.letterApprovalStep.updateMany({
+        where: {
+          letterInstanceId: letterId,
+          stepNumber: currentStep,
+          status: "PENDING",
+        },
+        data: {
+          status: "REVISION",
+          actorId,
+          actorRole,
+          comments,
+          updatedAt: new Date(),
+        },
+      });
 
-    // Go back to step 1 (Mahasiswa revises and resubmits)
-    return Prisma.letterInstance.update({
-      where: { id: letterId },
-      data: {
-        currentStep: STEP_SA, // Back to SA step after revision
-        status: "PENDING",
-        updatedAt: new Date(),
-        approvalSteps: {
-          create: {
-            stepNumber: STEP_SA,
-            status: "PENDING",
+      if (res.count === 0) {
+        throw new Error("No pending step to mark as revision at current step");
+      }
+
+      // Go back to step 1 (Mahasiswa revises and resubmits)
+      return tx.letterInstance.update({
+        where: { id: letterId },
+        data: {
+          currentStep: STEP_SA, // Back to SA step after revision
+          status: "PENDING",
+          updatedAt: new Date(),
+          approvalSteps: {
+            create: {
+              stepNumber: STEP_SA,
+              status: "PENDING",
+            },
           },
         },
-      },
-      include: {
-        approvalSteps: true,
-      },
+        include: {
+          approvalSteps: true,
+        },
+      });
     });
   }
 
@@ -515,7 +638,7 @@ export abstract class LetterInstanceService {
       throw new Error("Letter is not at UPA step");
     }
 
-    // Generate letter number
+    // Generate letter number using format: [queue]/UN7.F8.4/AK/[roman month]/[year]
     const letterNumber = await this.generateLetterNumber(letter.letterType.name);
 
     // Update letter with number and archive info
@@ -534,7 +657,10 @@ export abstract class LetterInstanceService {
   }
 
   /**
-   * Generate letter number based on format: [queue]/FSM/SA/[month]/[year]
+   * Generate letter number based on format: [queue]/UN7.F8.4/AK/[roman month]/[year]
+   * - queue: running number per year for this letter type (AK006)
+   * - month: roman numeral of the current month
+   * - year: current year (YYYY)
    */
   static async generateLetterNumber(letterTypeName: string): Promise<string> {
     const now = new Date();
@@ -558,8 +684,11 @@ export abstract class LetterInstanceService {
 
     const queueNumber = count + 1;
 
+    // Pad queue to 3 digits (e.g., 001) for readability
+    const queuePadded = queueNumber.toString().padStart(3, "0");
+
     // Format: [queue]/UN7.F8.4/AK/[month]/[year]
-    return `${queueNumber}/UN7.F8.4/AK/${month}/${year}`;
+    return `${queuePadded}/UN7.F8.4/AK/${month}/${year}`;
   }
 
   /**

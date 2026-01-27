@@ -816,9 +816,39 @@ async function main() {
 
 	console.log("Assigned roles to users");
 
+	// Create default signature for MTU user
+	try {
+		const mtuUser = await Prisma.user.findUnique({
+			where: { email: "mtu@demo.local" },
+		});
+
+		if (mtuUser) {
+			// Check if signature already exists
+			const existingSignature = await Prisma.signature.findFirst({
+				where: { userId: mtuUser.id, isDefault: true },
+			});
+
+			if (!existingSignature) {
+				await Prisma.signature.create({
+					data: {
+						userId: mtuUser.id,
+						imageUrl: "/signatures/mtu-demo-signature.png",
+						isDefault: true,
+					},
+				});
+				console.log("✓ Created default signature for MTU user");
+			} else {
+				console.log("✓ MTU user already has a default signature");
+			}
+		}
+	} catch (error) {
+		console.log("✗ Error creating MTU signature:", error);
+	}
+
+
 	// Seed Letter Types
 	console.log("\n--- Seeding Letter Types ---");
-	
+
 	const ak006LetterType = await Prisma.letterType.upsert({
 		where: { id: "ak006-letter-type" },
 		update: {

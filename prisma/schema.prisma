@@ -311,6 +311,9 @@ model LetterInstance {
   status      LetterStatus @default(PENDING)
   currentStep Int          @default(1)
 
+  // Temporary agenda number (set on creation)
+  temporaryAgenda String? @map("temporary_agenda")
+
   // Letter numbering (set by UPA at finalization)
   letterNumber String? @map("letter_number")
 

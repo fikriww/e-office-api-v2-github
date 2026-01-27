@@ -19,12 +19,26 @@ export default new Elysia()
       ...requireRole("supervisor_akademik"),
     }
   )
+  // Get letters processed by SA (approved and moved forward)
+  .get(
+    "/processed",
+    async ({ user, status }) => {
+      const letters = await LetterInstanceService.getProcessedByStep(STEP_SA, LETTER_TYPE_AK006);
+      return {
+        success: true,
+        data: letters,
+      };
+    },
+    {
+      ...requireRole("supervisor_akademik"),
+    }
+  )
   // Get letter timeline
   .get(
     "/:id/timeline",
     async ({ params: { id }, status }) => {
       const letter = await LetterInstanceService.getById(id);
-      
+
       if (!letter) {
         return status(404, { success: false, message: "Letter not found" });
       }
@@ -48,7 +62,7 @@ export default new Elysia()
     "/:id",
     async ({ params: { id }, status }) => {
       const letter = await LetterInstanceService.getById(id);
-      
+
       if (!letter) {
         return status(404, { success: false, message: "Letter not found" });
       }

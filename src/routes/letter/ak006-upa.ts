@@ -19,6 +19,20 @@ export default new Elysia()
       ...requireRole("upa"),
     }
   )
+  // Get letters processed by UPA (completed)
+  .get(
+    "/processed",
+    async ({ user, status }) => {
+      const letters = await LetterInstanceService.getProcessedByStep(STEP_UPA, LETTER_TYPE_AK006);
+      return {
+        success: true,
+        data: letters,
+      };
+    },
+    {
+      ...requireRole("upa"),
+    }
+  )
   // Get archived letters
   .get(
     "/archive",
@@ -38,7 +52,7 @@ export default new Elysia()
     "/:id/timeline",
     async ({ params: { id }, status }) => {
       const letter = await LetterInstanceService.getById(id);
-      
+
       if (!letter) {
         return status(404, { success: false, message: "Letter not found" });
       }
@@ -62,7 +76,7 @@ export default new Elysia()
     "/:id",
     async ({ params: { id }, status }) => {
       const letter = await LetterInstanceService.getById(id);
-      
+
       if (!letter) {
         return status(404, { success: false, message: "Letter not found" });
       }
