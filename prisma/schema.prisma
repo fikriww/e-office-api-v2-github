@@ -254,8 +254,14 @@ model ProgramStudi {
 model Attachment {
   id String @id @default(cuid())
 
-  domain   String
-  filename String
+  filename     String
+  originalName String
+  mimeType     String?
+  size         Int?
+  url          String
+
+  letterInstanceId String?
+  letterInstance   LetterInstance? @relation(fields: [letterInstanceId], references: [id], onDelete: Cascade)
 
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt
@@ -334,6 +340,7 @@ model LetterInstance {
   createdBy    User       @relation("CreatedLetters", fields: [createdById], references: [id])
 
   approvalSteps LetterApprovalStep[]
+  attachments   Attachment[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt

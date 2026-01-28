@@ -34,7 +34,7 @@ export default new Elysia()
     "/:id/timeline",
     async ({ params: { id }, user, status }) => {
       const letter = await LetterInstanceService.getById(id);
-      
+
       if (!letter) {
         return status(404, { success: false, message: "Letter not found" });
       }
@@ -62,7 +62,7 @@ export default new Elysia()
     "/:id",
     async ({ params: { id }, user, status }) => {
       const letter = await LetterInstanceService.getById(id);
-      
+
       if (!letter) {
         return status(404, { success: false, message: "Letter not found" });
       }
@@ -132,6 +132,7 @@ export default new Elysia()
           semester: body.semester,
           tahunAkademik: body.tahunAkademik,
         },
+        attachments: body.attachments,
       });
 
       return {
@@ -145,6 +146,17 @@ export default new Elysia()
         keperluan: t.String({ minLength: 1 }),
         semester: t.Number({ minimum: 1, maximum: 14 }),
         tahunAkademik: t.String({ minLength: 1 }),
+        attachments: t.Optional(
+          t.Array(
+            t.Object({
+              url: t.String(),
+              filename: t.String(),
+              originalName: t.String(),
+              mimeType: t.Optional(t.String()),
+              size: t.Optional(t.Number()),
+            })
+          )
+        ),
       }),
     }
   )
@@ -165,7 +177,7 @@ export default new Elysia()
       try {
         // Check if this is a revision resubmission (SA requested revision)
         const needsRevision = await LetterInstanceService.needsRevision(id);
-        
+
         const newValues = {
           keperluan: body.keperluan,
           semester: body.semester,

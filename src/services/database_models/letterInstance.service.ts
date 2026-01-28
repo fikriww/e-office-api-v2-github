@@ -52,6 +52,13 @@ export abstract class LetterInstanceService {
     createdById: string;
     schema: object;
     values: object;
+    attachments?: Array<{
+      url: string;
+      filename: string;
+      originalName: string;
+      mimeType?: string;
+      size?: number;
+    }>;
   }) {
     // Generate temporary agenda number
     const temporaryAgenda = await this.generateTemporaryAgenda();
@@ -80,6 +87,17 @@ export abstract class LetterInstanceService {
             },
           ],
         },
+        attachments: data.attachments
+          ? {
+            create: data.attachments.map((att) => ({
+              url: att.url,
+              filename: att.filename,
+              originalName: att.originalName,
+              mimeType: att.mimeType,
+              size: att.size,
+            })),
+          }
+          : undefined,
       },
       include: {
         approvalSteps: true,
@@ -118,6 +136,7 @@ export abstract class LetterInstanceService {
           },
         },
         archivedBy: true,
+        attachments: true,
         approvalSteps: {
           include: {
             actor: true,
