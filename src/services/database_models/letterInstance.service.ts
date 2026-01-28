@@ -218,38 +218,61 @@ export abstract class LetterInstanceService {
       });
     }
 
-    // Latest entry per non-zero step (1,2,3) by updatedAt/createdAt
-    const latestByStep = new Map<number, typeof steps[0]>();
-    for (const s of steps.filter((x) => x.stepNumber !== 0)) {
-      const key = s.stepNumber;
-      const prev = latestByStep.get(key);
-      const sTime = new Date(s.updatedAt || s.createdAt).getTime();
-      const prevTime = prev ? new Date(prev.updatedAt || prev.createdAt).getTime() : -Infinity;
-      if (!prev || sTime >= prevTime) latestByStep.set(key, s);
+    // Get all non-zero step entries, sorted by date
+    const nonZeroSteps = steps
+      .filter((s) => s.stepNumber !== 0)
+      // Filter out redundant PENDING steps:
+      // Only show PENDING status if it matches the letter's currentStep.
+      // This prevents "Waiting" entries from appearing for steps that are in REVISION state (since currentStep would be 0).
+      .filter((s) => {
+        if (s.status === 'PENDING') {
+          return s.stepNumber === letter.currentStep;
+        }
+        return true;
+      })
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    // Track which step numbers have entries
+    const stepsWithEntries = new Set(nonZeroSteps.map(s => s.stepNumber));
+
+    // Add all non-zero step entries (including revisions)
+    for (const step of nonZeroSteps) {
+      const meta = stepMeta[step.stepNumber] || { role: `Step ${step.stepNumber}`, roleName: "Unknown", action: "Unknown action" };
+
+      // Determine action based on status
+      let action = meta.action;
+      if (step.status === "REVISION") {
+        action = "Meminta revisi";
+      } else if (step.status === "REJECTED") {
+        action = "Menolak surat";
+      } else if (step.status === "APPROVED") {
+        action = step.stepNumber === 1 ? "Menyetujui surat" :
+          step.stepNumber === 2 ? "Menandatangani surat" :
+            step.stepNumber === 3 ? "Menerbitkan surat" : meta.action;
+      }
+
+      timeline.push({
+        step: step.stepNumber,
+        role: meta.role,
+        roleName: meta.roleName,
+        actor: step.actor?.name || null,
+        action,
+        status: step.status,
+        statusLabel: statusLabels[step.status] || step.status,
+        date: step.updatedAt || step.createdAt,
+        comments: step.comments,
+        isCompleted: step.status === "APPROVED",
+        isCurrent: step.stepNumber === letter.currentStep && step.status === "PENDING",
+        isRejected: step.status === "REJECTED",
+        isRevision: step.status === "REVISION",
+      });
     }
 
-    // Push latest for steps 1..3 or future placeholder
-    const maxStep = 3; // Always only show steps 1-3 in the loop
+    // Add future placeholders for steps that haven't started yet
+    const maxStep = 3;
     for (let stepNum = 1; stepNum <= maxStep; stepNum++) {
-      const latest = latestByStep.get(stepNum);
-      const meta = stepMeta[stepNum] || { role: `Step ${stepNum}`, roleName: "Unknown", action: "Unknown action" };
-      if (latest) {
-        timeline.push({
-          step: stepNum,
-          role: meta.role,
-          roleName: meta.roleName,
-          actor: latest.actor?.name || null,
-          action: meta.action,
-          status: latest.status,
-          statusLabel: statusLabels[latest.status] || latest.status,
-          date: latest.updatedAt || latest.createdAt,
-          comments: latest.comments,
-          isCompleted: latest.status === "APPROVED",
-          isCurrent: stepNum === letter.currentStep && latest.status === "PENDING",
-          isRejected: latest.status === "REJECTED",
-          isRevision: latest.status === "REVISION",
-        });
-      } else {
+      if (!stepsWithEntries.has(stepNum)) {
+        const meta = stepMeta[stepNum] || { role: `Step ${stepNum}`, roleName: "Unknown", action: "Unknown action" };
         timeline.push({
           step: stepNum,
           role: meta.role,
@@ -268,6 +291,20 @@ export abstract class LetterInstanceService {
         });
       }
     }
+
+    // Sort timeline chronologically by date
+    // Future entries (no date) go at the end, sorted by step number
+    timeline.sort((a, b) => {
+      // Future entries go at the end
+      if (a.isFuture && !b.isFuture) return 1;
+      if (!a.isFuture && b.isFuture) return -1;
+      // Both are future - sort by step number
+      if (a.isFuture && b.isFuture) return a.step - b.step;
+      // Both have dates - sort chronologically
+      const dateA = a.date ? new Date(a.date).getTime() : 0;
+      const dateB = b.date ? new Date(b.date).getTime() : 0;
+      return dateA - dateB;
+    });
 
     // Add final step for completed letters
     if (letter.status === "COMPLETED") {
@@ -391,18 +428,14 @@ export abstract class LetterInstanceService {
    */
   static async getProcessedByStep(stepNumber: number, letterTypeName?: string) {
     const whereClause: any = {
-      OR: [
-        // Letters that have moved past this step
-        { currentStep: { gt: stepNumber } },
-        // Letters that are completed
-        { status: "COMPLETED" },
-      ],
       approvalSteps: {
         some: {
           stepNumber: stepNumber,
-          status: "APPROVED",
-        },
-      },
+          status: {
+            in: ["APPROVED", "REJECTED", "REVISION"]
+          }
+        }
+      }
     };
 
     if (letterTypeName) {
@@ -558,13 +591,17 @@ export abstract class LetterInstanceService {
   }
 
   /**
-   * Request revision - send back to previous step
+   * Request revision - send back to Mahasiswa to fix
+   */
+  /**
+   * Request revision - send back to Mahasiswa or previous step
    */
   static async requestRevision(
     letterId: string,
     actorId: string,
     actorRole: string,
-    comments: string
+    comments: string,
+    targetStep: number = 0 // Default revisions go back to Mahasiswa
   ) {
     return Prisma.$transaction(async (tx) => {
       const letter = await tx.letterInstance.findUnique({ where: { id: letterId } });
@@ -584,6 +621,8 @@ export abstract class LetterInstanceService {
           actorId,
           actorRole,
           comments,
+          // Store target step info if needed? Ideally we should add a revisionTargetStep field to approvalStep schema but for now we rely on comments or implicit flow
+          // Assuming approvalStep doesn't have revisionTargetStep column yet based on previous files seen.
           updatedAt: new Date(),
         },
       });
@@ -592,20 +631,41 @@ export abstract class LetterInstanceService {
         throw new Error("No pending step to mark as revision at current step");
       }
 
-      // Go back to step 1 (Mahasiswa revises and resubmits)
+      // If resolving back to SA (step 1), we need to ensure SA step is Pending?
+      // Actually, if we send back to SA (step 1), we should create a new PENDING step for step 1?
+      // OR just set currentStep to 1 and ensure there is a PENDING step for 1? 
+
+      // If we send to Mahasiswa (step 0), we set currentStep 0 and status PENDING.
+
+      // Let's implement generic logic:
+      // Set currentStep to targetStep.
+      // If targetStep is NOT 0, recreate a PENDING step for that target step so they can act on it?
+      // But if targetStep is 0 (Mahasiswa), they don't have a PENDING approval step usually (only SA and up do).
+      // Mahasiswa status is tracked by letter.currentStep === 0.
+
+      // However, if we send back to SA (1), we probably want to create a new PENDING step for 1?
+      // Logic for resubmitAfterRevision (Mahasiswa) creates PENDING for SA.
+      // If MTU sends back to SA, we should probably create PENDING for SA.
+
+      const updateData: any = {
+        currentStep: targetStep,
+        status: "PENDING",
+        updatedAt: new Date(),
+      };
+
+      if (targetStep > 0) {
+        // If returning to a supervisor/admin step, we need to create a new PENDING entry for them to approve again
+        updateData.approvalSteps = {
+          create: {
+            stepNumber: targetStep,
+            status: "PENDING"
+          }
+        };
+      }
+
       return tx.letterInstance.update({
         where: { id: letterId },
-        data: {
-          currentStep: STEP_SA, // Back to SA step after revision
-          status: "PENDING",
-          updatedAt: new Date(),
-          approvalSteps: {
-            create: {
-              stepNumber: STEP_SA,
-              status: "PENDING",
-            },
-          },
-        },
+        data: updateData,
         include: {
           approvalSteps: true,
         },
@@ -814,21 +874,20 @@ export abstract class LetterInstanceService {
       },
     });
 
-    // Find the latest pending step at SA and reset it for re-verification
-    // Update any REVISION step to show it was addressed
-    await Prisma.letterApprovalStep.updateMany({
-      where: {
-        letterInstanceId: letterId,
-        status: "REVISION",
-      },
+    // Add step 0 entry to record that mahasiswa resubmitted after revision
+    await Prisma.letterApprovalStep.create({
       data: {
-        status: "APPROVED", // Mark as addressed
-        comments: revisionStep.comments ? `${revisionStep.comments} [Direvisi oleh mahasiswa]` : "[Direvisi oleh mahasiswa]",
-        updatedAt: new Date(),
+        letterInstanceId: letterId,
+        stepNumber: 0, // Mahasiswa step
+        status: "APPROVED",
+        actorId: userId,
+        actorRole: "mahasiswa",
+        comments: `Mengajukan ulang setelah revisi dari ${revisionStep.actorRole === 'supervisor_akademik' ? 'Supervisor Akademik' : revisionStep.actorRole === 'manager_tu' ? 'Manajer TU' : 'pihak terkait'}`,
       },
     });
 
-    // Create new pending step for SA re-verification
+    // Update any REVISION step to show it was addressed (if needed, or just leave it as history)
+    // We create new pending step for SA re-verification
     await Prisma.letterApprovalStep.create({
       data: {
         letterInstanceId: letterId,

@@ -204,4 +204,53 @@ export default new Elysia()
         comments: t.String({ minLength: 1 }),
       }),
     }
+  )
+  // Request revision
+  .post(
+    "/:id/revise",
+    async ({ params: { id }, body, user, status }) => {
+      const letter = await LetterInstanceService.getById(id);
+
+      if (!letter) {
+        return status(404, { success: false, message: "Letter not found" });
+      }
+
+      if (letter.currentStep !== STEP_MTU) {
+        return status(400, {
+          success: false,
+          message: "Letter is not at MTU step",
+        });
+      }
+
+      try {
+        const result = await LetterInstanceService.requestRevision(
+          id,
+          user.id,
+          "manager_tu",
+          body.comments,
+          body.targetStep,
+        );
+
+        return {
+          success: true,
+          message: "Letter returned for revision",
+          data: result,
+        };
+      } catch (error: any) {
+        return status(500, {
+          success: false,
+          message: error.message || "Failed to request revision",
+        });
+      }
+    },
+    {
+      ...requireRole("manager_tu"),
+      params: t.Object({
+        id: t.String(),
+      }),
+      body: t.Object({
+        comments: t.String({ minLength: 1 }),
+        targetStep: t.Number({ default: 0 }), // 0 for Mahasiswa, 1 for SA
+      }),
+    }
   );
