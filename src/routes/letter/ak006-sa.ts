@@ -1,6 +1,7 @@
 // AK006 routes for Supervisor Akademik (SA)
 import { authGuardPlugin, requireRole } from "@backend/middlewares/auth.ts";
 import { LetterInstanceService, LETTER_TYPE_AK006, STEP_SA } from "@backend/services/database_models/letterInstance.service.ts";
+import { Prisma } from "@backend/db/index.ts";
 import { Elysia, t } from "elysia";
 
 export default new Elysia()
@@ -10,9 +11,24 @@ export default new Elysia()
     "/pending",
     async ({ user, status }) => {
       const letters = await LetterInstanceService.getPendingForStep(STEP_SA, LETTER_TYPE_AK006);
+
+      // Override status for display if this is a revision request from MTU (or higher)
+      // Check if any approval step > 1 (STEP_SA) has status 'REVISION'
+      const processedLetters = letters.map(letter => {
+        const hasRevision = letter.approvalSteps.some(step => step.stepNumber > STEP_SA && step.status === 'REVISION');
+        // Check if there is an active PENDING step for SA (Step 1)
+        // If so, it means the student (or SA) has resubmitted/updated, so it is waiting for SA.
+        const hasPendingStep1 = letter.approvalSteps.some(step => step.stepNumber === STEP_SA && step.status === 'PENDING');
+
+        if (hasRevision && !hasPendingStep1) {
+          return { ...letter, status: 'REVISION' };
+        }
+        return letter;
+      });
+
       return {
         success: true,
-        data: letters,
+        data: processedLetters,
       };
     },
     {
@@ -65,6 +81,16 @@ export default new Elysia()
 
       if (!letter) {
         return status(404, { success: false, message: "Letter not found" });
+      }
+
+      // Check if revision and override status for consistency with list view
+      const hasRevision = letter.approvalSteps?.some(step => step.stepNumber > STEP_SA && step.status === 'REVISION');
+      if (hasRevision && letter.currentStep === STEP_SA) {
+        // Clone to avoid mutation issues if any, though spread is safer
+        return {
+          success: true,
+          data: { ...letter, status: 'REVISION' }
+        };
       }
 
       return {
@@ -176,5 +202,80 @@ export default new Elysia()
         ]),
         comments: t.Optional(t.String()),
       }),
+    }
+  )
+  // Update letter data (SA)
+  .put(
+    "/:id",
+    async ({ params: { id }, body, user, status }) => {
+      const letter = await LetterInstanceService.getById(id);
+
+      if (!letter) {
+        return status(404, { success: false, message: "Letter not found" });
+      }
+
+      // Check if letter is at SA step. 
+      // We allow editing if it IS at SA step (PENDING or REVISION).
+      if (letter.currentStep !== STEP_SA) {
+        return status(400, { success: false, message: "Letter is not at SA verification step" });
+      }
+
+      try {
+        const updatedLetter = await Prisma.letterInstance.update({
+          where: { id },
+          data: {
+            values: {
+              ...(typeof letter.values === 'object' && letter.values ? letter.values : {}),
+              ...body
+            },
+            updatedAt: new Date()
+          },
+          include: {
+            approvalSteps: true,
+            letterType: true,
+            createdBy: {
+              include: {
+                mahasiswa: {
+                  include: {
+                    departemen: true,
+                    programStudi: true,
+                  },
+                },
+              },
+            },
+          }
+        });
+
+        return {
+          success: true,
+          message: "Letter data updated successfully",
+          data: updatedLetter,
+        };
+      } catch (error: any) {
+        console.error("Update error:", error);
+        return status(500, {
+          success: false,
+          message: error.message || "Failed to update letter",
+        });
+      }
+    },
+    {
+      ...requireRole("supervisor_akademik"),
+      params: t.Object({
+        id: t.String(),
+      }),
+      body: t.Object({
+        keperluan: t.Optional(t.String()),
+        semester: t.Optional(t.Union([t.String(), t.Number()])),
+        tahunAkademik: t.Optional(t.String()),
+        tempat_lahir: t.Optional(t.String()),
+        tanggal_lahir: t.Optional(t.String()),
+        no_hp: t.Optional(t.String()),
+        alamat: t.Optional(t.String()),
+        nama_ortu_wali: t.Optional(t.String()),
+        nip_pensiun_ortu_wali: t.Optional(t.String()),
+        golongan_ortu_wali: t.Optional(t.String()),
+        instansi_ortu_wali: t.Optional(t.String()),
+      })
     }
   );

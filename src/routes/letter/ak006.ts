@@ -22,9 +22,26 @@ export default new Elysia()
     "/my",
     async ({ user }) => {
       const letters = await LetterInstanceService.getByCreator(user.id, LETTER_TYPE_AK006);
+
+      // Override status for display if this is a revision request from MTU (or higher)
+      // Check if any approval step > 1 (STEP_SA) has status 'REVISION'
+      const processedLetters = letters.map(letter => {
+        const hasRevision = letter.approvalSteps?.some(step => step.stepNumber > 1 && step.status === 'REVISION');
+        // Check if there is an active PENDING step for SA (Step 1)
+        // If so, it means the student (or SA) has resubmitted/updated, so it is waiting for SA.
+        const hasPendingStep1 = letter.approvalSteps?.some(step => step.stepNumber === 1 && step.status === 'PENDING');
+
+        // Logic for returning 'Perlu Revisi' status IF it is at Supervisor step AND not actively pending review
+        // If hasPendingStep1 is true, we respect the default 'PENDING' status.
+        if (hasRevision && letter.currentStep === 1 && !hasPendingStep1) {
+          return { ...letter, status: 'REVISION' };
+        }
+        return letter;
+      });
+
       return {
         success: true,
-        data: letters,
+        data: processedLetters,
       };
     },
     {}
@@ -175,8 +192,11 @@ export default new Elysia()
       }
 
       try {
-        // Check if this is a revision resubmission (SA requested revision)
-        const needsRevision = await LetterInstanceService.needsRevision(id);
+
+        // Check if there is a revision from MTU/UPA (Step > 1)
+        // If so, and we are at Step 1, it means SA handles it, not Mahasiswa.
+        const isRevisionForMahasiswa = letter.currentStep === 0;
+        const isRevisionFromUpper = letter.approvalSteps?.some(step => step.stepNumber > 1 && step.status === 'REVISION');
 
         const newValues = {
           keperluan: body.keperluan,
@@ -184,23 +204,28 @@ export default new Elysia()
           tahunAkademik: body.tahunAkademik,
         };
 
-        let updated;
-        if (needsRevision) {
-          // Handle revision resubmission (SA requested revision)
-          updated = await LetterInstanceService.resubmitAfterRevision(id, user.id, newValues);
+        if (isRevisionForMahasiswa) {
+          // Handle revision resubmission (SA/MTU requested revision TO MAHASISWA)
+          const updated = await LetterInstanceService.resubmitAfterRevision(id, user.id, newValues);
           return {
             success: true,
             message: "Surat berhasil diajukan ulang setelah revisi",
             data: updated,
           };
-        } else {
-          // Self-revision (mahasiswa wants to change details voluntarily)
-          updated = await LetterInstanceService.selfRevise(id, user.id, newValues);
+        } else if (letter.currentStep === 1 && !isRevisionFromUpper) {
+          // Self-revision (mahasiswa wants to change details voluntarily before SA checks)
+          // Only allowed if NO revision from upper levels exists
+          const updated = await LetterInstanceService.selfRevise(id, user.id, newValues);
           return {
             success: true,
             message: "Surat berhasil diperbarui",
             data: updated,
           };
+        } else {
+          return status(403, {
+            success: false,
+            message: "Anda tidak dapat mengubah data surat saat ini. Surat sedang dalam proses tinjau atau revisi di tingkat Supervisor."
+          });
         }
       } catch (error: any) {
         return status(400, {
@@ -240,6 +265,16 @@ export default new Elysia()
         return status(400, {
           success: false,
           message: "Surat tidak dapat dibatalkan karena sudah diproses",
+        });
+      }
+
+      // Also prevent cancellation if it is currently under revision by Supervisor (requested by MTU/Upper levels)
+      // If Step > 1 has revision, it means it's an internal revision process, not a fresh submission.
+      const isRevisionFromUpper = letter.approvalSteps?.some(step => step.stepNumber > 1 && step.status === 'REVISION');
+      if (isRevisionFromUpper) {
+        return status(403, {
+          success: false,
+          message: "Surat tidak dapat dibatalkan karena sedang dalam proses revisi di tingkat Supervisor",
         });
       }
 
