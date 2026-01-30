@@ -152,6 +152,11 @@ export default new Elysia()
           tanggal_lahir: body.tanggal_lahir,
           no_hp: body.no_hp,
           alamat: body.alamat,
+          // Parent/guardian fields for AK006 letter template
+          nama_ortu_wali: body.nama_ortu_wali,
+          nip_pensiun_ortu_wali: body.nip_pensiun_ortu_wali,
+          golongan_ortu_wali: body.golongan_ortu_wali,
+          instansi_ortu_wali: body.instansi_ortu_wali,
         },
         attachments: body.attachments,
       });
@@ -171,6 +176,11 @@ export default new Elysia()
         tanggal_lahir: t.Optional(t.String()),
         no_hp: t.Optional(t.String()),
         alamat: t.Optional(t.String()),
+        // Parent/guardian fields
+        nama_ortu_wali: t.Optional(t.String()),
+        nip_pensiun_ortu_wali: t.Optional(t.String()),
+        golongan_ortu_wali: t.Optional(t.String()),
+        instansi_ortu_wali: t.Optional(t.String()),
         attachments: t.Optional(
           t.Array(
             t.Object({
@@ -214,6 +224,11 @@ export default new Elysia()
           tanggal_lahir: body.tanggal_lahir,
           no_hp: body.no_hp,
           alamat: body.alamat,
+          // Parent/guardian fields
+          nama_ortu_wali: body.nama_ortu_wali,
+          nip_pensiun_ortu_wali: body.nip_pensiun_ortu_wali,
+          golongan_ortu_wali: body.golongan_ortu_wali,
+          instansi_ortu_wali: body.instansi_ortu_wali,
         };
 
         if (isRevisionForMahasiswa) {
@@ -258,6 +273,11 @@ export default new Elysia()
         tanggal_lahir: t.Optional(t.String()),
         no_hp: t.Optional(t.String()),
         alamat: t.Optional(t.String()),
+        // Parent/guardian fields
+        nama_ortu_wali: t.Optional(t.String()),
+        nip_pensiun_ortu_wali: t.Optional(t.String()),
+        golongan_ortu_wali: t.Optional(t.String()),
+        instansi_ortu_wali: t.Optional(t.String()),
       }),
     }
   )
