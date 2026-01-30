@@ -12,6 +12,16 @@ const AK006_SCHEMA = {
     { name: "keperluan", type: "string", required: true, label: "Keperluan" },
     { name: "semester", type: "number", required: true, label: "Semester" },
     { name: "tahunAkademik", type: "string", required: true, label: "Tahun Akademik" },
+    // Identity fields
+    { name: "tempat_lahir", type: "string", required: false, label: "Tempat Lahir" },
+    { name: "tanggal_lahir", type: "string", required: false, label: "Tanggal Lahir" },
+    { name: "no_hp", type: "string", required: false, label: "No. HP" },
+    { name: "alamat", type: "string", required: false, label: "Alamat" },
+    // Parent/Guardian fields
+    { name: "nama_ortu_wali", type: "string", required: false, label: "Nama Orang Tua/Wali" },
+    { name: "nip_pensiun_ortu_wali", type: "string", required: false, label: "NIP/Pensiunan Orang Tua/Wali" },
+    { name: "golongan_ortu_wali", type: "string", required: false, label: "Golongan Orang Tua/Wali" },
+    { name: "instansi_ortu_wali", type: "string", required: false, label: "Instansi Orang Tua/Wali" },
   ],
 };
 
