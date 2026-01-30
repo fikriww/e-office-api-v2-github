@@ -148,6 +148,10 @@ export default new Elysia()
           keperluan: body.keperluan,
           semester: body.semester,
           tahunAkademik: body.tahunAkademik,
+          tempat_lahir: body.tempat_lahir,
+          tanggal_lahir: body.tanggal_lahir,
+          no_hp: body.no_hp,
+          alamat: body.alamat,
         },
         attachments: body.attachments,
       });
@@ -163,6 +167,10 @@ export default new Elysia()
         keperluan: t.String({ minLength: 1 }),
         semester: t.Number({ minimum: 1, maximum: 14 }),
         tahunAkademik: t.String({ minLength: 1 }),
+        tempat_lahir: t.Optional(t.String()),
+        tanggal_lahir: t.Optional(t.String()),
+        no_hp: t.Optional(t.String()),
+        alamat: t.Optional(t.String()),
         attachments: t.Optional(
           t.Array(
             t.Object({
@@ -202,6 +210,10 @@ export default new Elysia()
           keperluan: body.keperluan,
           semester: body.semester,
           tahunAkademik: body.tahunAkademik,
+          tempat_lahir: body.tempat_lahir,
+          tanggal_lahir: body.tanggal_lahir,
+          no_hp: body.no_hp,
+          alamat: body.alamat,
         };
 
         if (isRevisionForMahasiswa) {
@@ -242,6 +254,10 @@ export default new Elysia()
         keperluan: t.String({ minLength: 1 }),
         semester: t.Number({ minimum: 1, maximum: 14 }),
         tahunAkademik: t.String({ minLength: 1 }),
+        tempat_lahir: t.Optional(t.String()),
+        tanggal_lahir: t.Optional(t.String()),
+        no_hp: t.Optional(t.String()),
+        alamat: t.Optional(t.String()),
       }),
     }
   )
