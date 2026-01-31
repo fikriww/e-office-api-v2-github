@@ -114,7 +114,11 @@ export default new Elysia()
         const result = await LetterInstanceService.finalizeLetter(
           id,
           user.id,
-          body.comments
+          {
+            letterNumber: body.letterNumber,
+            letterDate: body.letterDate,
+            comments: body.comments,
+          }
         );
 
         return {
@@ -135,6 +139,8 @@ export default new Elysia()
         id: t.String(),
       }),
       body: t.Object({
+        letterNumber: t.Optional(t.String()),
+        letterDate: t.Optional(t.String()),
         comments: t.Optional(t.String()),
       }),
     }

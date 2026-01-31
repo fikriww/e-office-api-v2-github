@@ -98,7 +98,7 @@ export default new Elysia()
       }
 
       // Get signature URL - either from request or from user's default signature
-      let signatureUrl = body.signatureUrl;
+      let signatureUrl: string | undefined = body.signatureUrl;
 
       if (!signatureUrl && body.signatureId) {
         const signature = await SignatureService.getById(body.signatureId);
@@ -109,7 +109,8 @@ export default new Elysia()
 
       if (!signatureUrl) {
         // Try to get default signature
-        signatureUrl = await SignatureService.getDefaultSignatureUrl(user.id);
+        const defaultSignature = await SignatureService.getDefaultSignatureUrl(user.id);
+        signatureUrl = defaultSignature || undefined;
       }
 
       if (!signatureUrl) {

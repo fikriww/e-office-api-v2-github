@@ -708,7 +708,7 @@ export abstract class LetterInstanceService {
   static async finalizeLetter(
     letterId: string,
     actorId: string,
-    comments?: string
+    data?: { letterNumber?: string; letterDate?: string; comments?: string }
   ) {
     const letter = await this.getById(letterId);
     if (!letter) throw new Error("Letter not found");
@@ -717,22 +717,31 @@ export abstract class LetterInstanceService {
       throw new Error("Letter is not at UPA step");
     }
 
-    // Generate letter number using format: [queue]/UN7.F8.4/AK/[roman month]/[year]
-    const letterNumber = await this.generateLetterNumber(letter.letterType.name);
+    // Use provided letter number or generate automatically
+    const letterNumber = data?.letterNumber || await this.generateLetterNumber(letter.letterType.name);
+    
+    // Parse letterDate if provided, otherwise use current date
+    let archivedAt = new Date();
+    if (data?.letterDate) {
+      const parsedDate = new Date(data.letterDate);
+      if (!isNaN(parsedDate.getTime())) {
+        archivedAt = parsedDate;
+      }
+    }
 
     // Update letter with number and archive info
     await Prisma.letterInstance.update({
       where: { id: letterId },
       data: {
         letterNumber,
-        archivedAt: new Date(),
+        archivedAt,
         archivedById: actorId,
         updatedAt: new Date(),
       },
     });
 
     // Approve the UPA step (final step)
-    return this.approveStep(letterId, actorId, "upa", comments);
+    return this.approveStep(letterId, actorId, "upa", data?.comments);
   }
 
   /**
