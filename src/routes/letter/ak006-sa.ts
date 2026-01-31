@@ -278,4 +278,76 @@ export default new Elysia()
         instansi_ortu_wali: t.Optional(t.String()),
       })
     }
+  )
+  // Update student data (for cases like major transfer, email change, etc.)
+  .put(
+    "/:id/student",
+    async ({ params: { id }, body, user, status }) => {
+      const letter = await LetterInstanceService.getById(id);
+
+      if (!letter) {
+        return status(404, { success: false, message: "Letter not found" });
+      }
+
+      // Check if letter is at SA step
+      if (letter.currentStep !== STEP_SA) {
+        return status(400, { success: false, message: "Letter is not at SA verification step" });
+      }
+
+      const studentUserId = letter.createdById;
+
+      try {
+        // Update User data (name, email)
+        if (body.name || body.email) {
+          await Prisma.user.update({
+            where: { id: studentUserId },
+            data: {
+              ...(body.name && { name: body.name }),
+              ...(body.email && { email: body.email }),
+              updatedAt: new Date()
+            }
+          });
+        }
+
+        // Update Mahasiswa data (nim, departemen, programStudi)
+        if (body.nim || body.departemenId || body.programStudiId) {
+          await Prisma.mahasiswa.update({
+            where: { userId: studentUserId },
+            data: {
+              ...(body.nim && { nim: body.nim }),
+              ...(body.departemenId && { departemenId: body.departemenId }),
+              ...(body.programStudiId && { programStudiId: body.programStudiId }),
+            }
+          });
+        }
+
+        // Fetch updated letter data
+        const updatedLetter = await LetterInstanceService.getById(id);
+
+        return {
+          success: true,
+          message: "Student data updated successfully",
+          data: updatedLetter,
+        };
+      } catch (error: any) {
+        console.error("Update student error:", error);
+        return status(500, {
+          success: false,
+          message: error.message || "Failed to update student data",
+        });
+      }
+    },
+    {
+      ...requireRole("supervisor_akademik"),
+      params: t.Object({
+        id: t.String(),
+      }),
+      body: t.Object({
+        name: t.Optional(t.String()),
+        email: t.Optional(t.String()),
+        nim: t.Optional(t.String()),
+        departemenId: t.Optional(t.String()),
+        programStudiId: t.Optional(t.String()),
+      })
+    }
   );
