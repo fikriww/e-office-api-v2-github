@@ -114,9 +114,14 @@ export default new Elysia()
   .post(
     "/",
     async ({ body, user, status }) => {
-      // Check if user is a mahasiswa
+      // Check if user is a mahasiswa and get full data
       const mahasiswa = await Prisma.mahasiswa.findUnique({
         where: { userId: user.id },
+        include: {
+          user: true,
+          departemen: true,
+          programStudi: true,
+        },
       });
 
       if (!mahasiswa) {
@@ -167,6 +172,12 @@ export default new Elysia()
           nip_pensiun_ortu_wali: body.nip_pensiun_ortu_wali,
           golongan_ortu_wali: body.golongan_ortu_wali,
           instansi_ortu_wali: body.instansi_ortu_wali,
+          // Identity fields - stored in values for persistence
+          nama_lengkap: mahasiswa.user.name,
+          nim: mahasiswa.nim,
+          email: mahasiswa.user.email,
+          program_studi: mahasiswa.programStudi?.name || '',
+          departemen: mahasiswa.departemen?.name || '',
         },
         attachments: body.attachments,
       });
