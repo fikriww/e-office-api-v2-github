@@ -869,7 +869,7 @@ export abstract class LetterInstanceService {
    * Resubmit letter after revision request
    * - Used when SA requested revision and mahasiswa updates the letter
    */
-  static async resubmitAfterRevision(letterId: string, userId: string, values: object) {
+  static async resubmitAfterRevision(letterId: string, userId: string, values: object, attachments?: any[]) {
     const letter = await this.getById(letterId);
     if (!letter) throw new Error("Letter not found");
 
@@ -882,6 +882,26 @@ export abstract class LetterInstanceService {
     const revisionStep = letter.approvalSteps?.find(step => step.status === "REVISION");
     if (!revisionStep) {
       throw new Error("Letter is not in revision status");
+    }
+
+    // If attachments are provided, delete old attachments and create new ones
+    if (attachments && attachments.length > 0) {
+      // Delete old attachments
+      await Prisma.attachment.deleteMany({
+        where: { letterInstanceId: letterId }
+      });
+
+      // Create new attachments
+      await Prisma.attachment.createMany({
+        data: attachments.map(att => ({
+          url: att.url,
+          filename: att.filename,
+          originalName: att.originalName,
+          mimeType: att.mimeType,
+          size: att.size,
+          letterInstanceId: letterId,
+        }))
+      });
     }
 
     // Update the letter values
@@ -925,7 +945,7 @@ export abstract class LetterInstanceService {
    * - Used when mahasiswa wants to change details before SA verifies
    * - Adds a timeline entry showing mahasiswa changed details
    */
-  static async selfRevise(letterId: string, userId: string, values: object) {
+  static async selfRevise(letterId: string, userId: string, values: object, attachments?: any[]) {
     const letter = await this.getById(letterId);
     if (!letter) throw new Error("Letter not found");
 
@@ -937,6 +957,26 @@ export abstract class LetterInstanceService {
     // Only allow self-revision when pending at SA step
     if (letter.status !== "PENDING" || letter.currentStep !== STEP_SA) {
       throw new Error("Letter can only be revised when pending at SA step");
+    }
+
+    // If attachments are provided, delete old attachments and create new ones
+    if (attachments && attachments.length > 0) {
+      // Delete old attachments
+      await Prisma.attachment.deleteMany({
+        where: { letterInstanceId: letterId }
+      });
+
+      // Create new attachments
+      await Prisma.attachment.createMany({
+        data: attachments.map(att => ({
+          url: att.url,
+          filename: att.filename,
+          originalName: att.originalName,
+          mimeType: att.mimeType,
+          size: att.size,
+          letterInstanceId: letterId,
+        }))
+      });
     }
 
     // Update the letter values

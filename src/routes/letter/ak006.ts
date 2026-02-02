@@ -254,7 +254,7 @@ export default new Elysia()
 
         if (isRevisionForMahasiswa) {
           // Handle revision resubmission (SA/MTU requested revision TO MAHASISWA)
-          const updated = await LetterInstanceService.resubmitAfterRevision(id, user.id, newValues);
+          const updated = await LetterInstanceService.resubmitAfterRevision(id, user.id, newValues, body.attachments);
           return {
             success: true,
             message: "Surat berhasil diajukan ulang setelah revisi",
@@ -263,7 +263,7 @@ export default new Elysia()
         } else if (letter.currentStep === 1 && !isRevisionFromUpper) {
           // Self-revision (mahasiswa wants to change details voluntarily before SA checks)
           // Only allowed if NO revision from upper levels exists
-          const updated = await LetterInstanceService.selfRevise(id, user.id, newValues);
+          const updated = await LetterInstanceService.selfRevise(id, user.id, newValues, body.attachments);
           return {
             success: true,
             message: "Surat berhasil diperbarui",
