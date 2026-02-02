@@ -668,6 +668,18 @@ export abstract class LetterInstanceService {
         data: updateData,
         include: {
           approvalSteps: true,
+          attachments: true,
+          letterType: true,
+          createdBy: {
+            include: {
+              mahasiswa: {
+                include: {
+                  programStudi: true,
+                  departemen: true,
+                },
+              },
+            },
+          },
         },
       });
     });
