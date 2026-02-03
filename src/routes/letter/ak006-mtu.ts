@@ -1,6 +1,7 @@
 // AK006 routes for Manajer TU (MTU)
 import { authGuardPlugin, requireRole } from "@backend/middlewares/auth.ts";
 import { LetterInstanceService, LETTER_TYPE_AK006, STEP_MTU } from "@backend/services/database_models/letterInstance.service.ts";
+import { notificationService } from "@backend/services/notification.service.ts";
 import { SignatureService } from "@backend/services/database_models/signature.service.ts";
 import { Elysia, t } from "elysia";
 
@@ -128,6 +129,26 @@ export default new Elysia()
           body.comments
         );
 
+        // Send notifications
+        const letterTypeName = letter.letterType?.name || 'Surat Pernyataan Masih Kuliah';
+        const mahasiswaName = letter.createdBy?.name || 'Mahasiswa';
+        try {
+          // Notify UPA that letter needs numbering
+          await notificationService.notifyUPALetterSigned(
+            id,
+            mahasiswaName,
+            letterTypeName
+          );
+          // Notify Mahasiswa that letter was signed
+          await notificationService.notifyMahasiswaSigned(
+            letter.createdById,
+            id,
+            letterTypeName
+          );
+        } catch (notifError) {
+          console.error('Failed to send notification:', notifError);
+        }
+
         return {
           success: true,
           message: "Letter signed and forwarded to UPA for numbering",
@@ -184,6 +205,20 @@ export default new Elysia()
           body.comments
         );
 
+        // Notify Mahasiswa about rejection
+        const letterTypeName = letter.letterType?.name || 'Surat Pernyataan Masih Kuliah';
+        try {
+          await notificationService.notifyMahasiswaRejection(
+            letter.createdById,
+            id,
+            letterTypeName,
+            body.comments,
+            'Manajer TU'
+          );
+        } catch (notifError) {
+          console.error('Failed to send notification:', notifError);
+        }
+
         return {
           success: true,
           message: "Letter rejected",
@@ -231,6 +266,32 @@ export default new Elysia()
           body.comments,
           body.targetStep,
         );
+
+        // Send notification based on target step
+        const letterTypeName = letter.letterType?.name || 'Surat Pernyataan Masih Kuliah';
+        const mahasiswaName = letter.createdBy?.name || 'Mahasiswa';
+        try {
+          if (body.targetStep === 0) {
+            // Notify Mahasiswa
+            await notificationService.notifyMahasiswaRevision(
+              letter.createdById,
+              id,
+              letterTypeName,
+              body.comments,
+              'Manajer TU'
+            );
+          } else if (body.targetStep === 1) {
+            // Notify SA
+            await notificationService.notifySARevision(
+              id,
+              letterTypeName,
+              mahasiswaName,
+              body.comments
+            );
+          }
+        } catch (notifError) {
+          console.error('Failed to send notification:', notifError);
+        }
 
         return {
           success: true,

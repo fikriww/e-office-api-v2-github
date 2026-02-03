@@ -162,6 +162,7 @@ model User {
   archivedLetters LetterInstance[]       @relation("ArchivedLetters")
   approvalSteps   LetterApprovalStep[]   @relation("ApprovalStepActor")
   signatures      Signature[]
+  notifications   Notification[]
 
   createdAt DateTime? @default(now())
   updatedAt DateTime? @updatedAt
@@ -341,6 +342,7 @@ model LetterInstance {
 
   approvalSteps LetterApprovalStep[]
   attachments   Attachment[]
+  notifications Notification[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime? @updatedAt
@@ -420,6 +422,52 @@ enum TemplateEngine {
   RAW
 
   @@map("template_engine")
+}
+
+// Notification system
+model Notification {
+  id String @id @default(cuid())
+
+  // Target user for this notification
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Notification type
+  type NotificationType
+
+  // Title and message
+  title   String
+  message String
+
+  // Reference to the letter (if applicable)
+  letterInstanceId String?         @map("letter_instance_id")
+  letterInstance   LetterInstance? @relation(fields: [letterInstanceId], references: [id], onDelete: Cascade)
+
+  // Read status
+  isRead Boolean @default(false) @map("is_read")
+
+  // Metadata (optional extra data as JSON)
+  metadata Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notification")
+}
+
+enum NotificationType {
+  LETTER_SUBMITTED        // Mahasiswa submitted a letter
+  NEEDS_VERIFICATION      // SA needs to verify
+  NEEDS_SIGNATURE         // MTU needs to sign
+  NEEDS_NUMBERING         // UPA needs to number
+  REVISION_REQUIRED       // Letter needs revision
+  LETTER_REJECTED         // Letter was rejected
+  LETTER_COMPLETED        // Letter is completed
+  LETTER_VERIFIED         // Letter verified by SA
+  LETTER_SIGNED           // Letter signed by MTU
+
+  @@map("notification_type")
 }
 
 // model Jwks {

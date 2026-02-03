@@ -1,6 +1,7 @@
 // AK006 routes for Mahasiswa
 import { authGuardPlugin, requireRole } from "@backend/middlewares/auth.ts";
 import { LetterInstanceService, LETTER_TYPE_AK006 } from "@backend/services/database_models/letterInstance.service.ts";
+import { notificationService } from "@backend/services/notification.service.ts";
 import { Prisma } from "@backend/db/index.ts";
 import { Elysia, t } from "elysia";
 
@@ -181,6 +182,18 @@ export default new Elysia()
         },
         attachments: body.attachments,
       });
+
+      // Send notification to Supervisor Akademik
+      try {
+        await notificationService.notifySANewLetter(
+          letter.id,
+          mahasiswa.user.name,
+          'Surat Pernyataan Masih Kuliah'
+        );
+      } catch (notifError) {
+        console.error('Failed to send notification:', notifError);
+        // Don't fail the request if notification fails
+      }
 
       return {
         success: true,

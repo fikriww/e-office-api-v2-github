@@ -1,6 +1,7 @@
 // AK006 routes for UPA
 import { authGuardPlugin, requireRole } from "@backend/middlewares/auth.ts";
 import { LetterInstanceService, LETTER_TYPE_AK006, STEP_UPA } from "@backend/services/database_models/letterInstance.service.ts";
+import { notificationService } from "@backend/services/notification.service.ts";
 import { Elysia, t } from "elysia";
 
 export default new Elysia()
@@ -121,6 +122,18 @@ export default new Elysia()
           }
         );
 
+        // Notify Mahasiswa that letter is completed
+        const letterTypeName = letter.letterType?.name || 'Surat Pernyataan Masih Kuliah';
+        try {
+          await notificationService.notifyMahasiswaCompleted(
+            letter.createdById,
+            id,
+            letterTypeName
+          );
+        } catch (notifError) {
+          console.error('Failed to send notification:', notifError);
+        }
+
         return {
           success: true,
           message: "Letter numbered and archived successfully",
@@ -177,6 +190,20 @@ export default new Elysia()
           body.comments
         );
 
+        // Notify Mahasiswa about rejection
+        const letterTypeName = letter.letterType?.name || 'Surat Pernyataan Masih Kuliah';
+        try {
+          await notificationService.notifyMahasiswaRejection(
+            letter.createdById,
+            id,
+            letterTypeName,
+            body.comments,
+            'UPA'
+          );
+        } catch (notifError) {
+          console.error('Failed to send notification:', notifError);
+        }
+
         return {
           success: true,
           message: "Letter rejected",
@@ -198,4 +225,80 @@ export default new Elysia()
         comments: t.String({ minLength: 1 }),
       }),
     }
+  )
+  // Request revision
+  .post(
+    "/:id/revise",
+    async ({ params: { id }, body, user, status }) => {
+      const letter = await LetterInstanceService.getById(id);
+
+      if (!letter) {
+        return status(404, { success: false, message: "Letter not found" });
+      }
+
+      if (letter.currentStep !== STEP_UPA) {
+        return status(400, {
+          success: false,
+          message: "Letter is not at UPA step",
+        });
+      }
+
+      try {
+        const result = await LetterInstanceService.requestRevision(
+          id,
+          user.id,
+          "upa",
+          body.comments,
+          body.targetStep,
+        );
+
+        // Send notification based on target step
+        const letterTypeName = letter.letterType?.name || 'Surat Pernyataan Masih Kuliah';
+        const mahasiswaName = letter.createdBy?.name || 'Mahasiswa';
+        try {
+          if (body.targetStep === 0) {
+            // Notify Mahasiswa
+            await notificationService.notifyMahasiswaRevision(
+              letter.createdById,
+              id,
+              letterTypeName,
+              body.comments,
+              'UPA'
+            );
+          } else if (body.targetStep === 1) {
+            // Notify SA
+            await notificationService.notifySARevision(
+              id,
+              letterTypeName,
+              mahasiswaName,
+              body.comments
+            );
+          }
+        } catch (notifError) {
+          console.error('Failed to send notification:', notifError);
+        }
+
+        return {
+          success: true,
+          message: "Letter returned for revision",
+          data: result,
+        };
+      } catch (error: any) {
+        return status(500, {
+          success: false,
+          message: error.message || "Failed to request revision",
+        });
+      }
+    },
+    {
+      ...requireRole("upa"),
+      params: t.Object({
+        id: t.String(),
+      }),
+      body: t.Object({
+        comments: t.String({ minLength: 1 }),
+        targetStep: t.Number({ default: 0 }), // 0 for Mahasiswa, 1 for SA
+      }),
+    }
   );
+

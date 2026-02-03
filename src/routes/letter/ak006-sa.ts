@@ -1,6 +1,7 @@
 // AK006 routes for Supervisor Akademik (SA)
 import { authGuardPlugin, requireRole } from "@backend/middlewares/auth.ts";
 import { LetterInstanceService, LETTER_TYPE_AK006, STEP_SA } from "@backend/services/database_models/letterInstance.service.ts";
+import { notificationService } from "@backend/services/notification.service.ts";
 import { Prisma } from "@backend/db/index.ts";
 import { Elysia, t } from "elysia";
 
@@ -124,6 +125,10 @@ export default new Elysia()
 
       try {
         let result;
+        const letterTypeName = letter.letterType?.name || 'Surat Pernyataan Masih Kuliah';
+        const mahasiswaName = letter.createdBy?.name || 'Mahasiswa';
+        const mahasiswaId = letter.createdById;
+
         switch (body.action) {
           case "approve":
             result = await LetterInstanceService.approveStep(
@@ -132,6 +137,25 @@ export default new Elysia()
               "supervisor_akademik",
               body.comments
             );
+
+            // Send notifications
+            try {
+              // Notify MTU that letter needs signature
+              await notificationService.notifyMTULetterVerified(
+                id,
+                mahasiswaName,
+                letterTypeName
+              );
+              // Notify Mahasiswa that letter was verified
+              await notificationService.notifyMahasiswaVerified(
+                mahasiswaId,
+                id,
+                letterTypeName
+              );
+            } catch (notifError) {
+              console.error('Failed to send notification:', notifError);
+            }
+
             return {
               success: true,
               message: "Letter verified and forwarded to MTU for signing",
@@ -151,6 +175,20 @@ export default new Elysia()
               "supervisor_akademik",
               body.comments
             );
+
+            // Notify Mahasiswa about rejection
+            try {
+              await notificationService.notifyMahasiswaRejection(
+                mahasiswaId,
+                id,
+                letterTypeName,
+                body.comments,
+                'Supervisor Akademik'
+              );
+            } catch (notifError) {
+              console.error('Failed to send notification:', notifError);
+            }
+
             return {
               success: true,
               message: "Letter rejected",
@@ -170,6 +208,20 @@ export default new Elysia()
               "supervisor_akademik",
               body.comments
             );
+
+            // Notify Mahasiswa about revision request
+            try {
+              await notificationService.notifyMahasiswaRevision(
+                mahasiswaId,
+                id,
+                letterTypeName,
+                body.comments,
+                'Supervisor Akademik'
+              );
+            } catch (notifError) {
+              console.error('Failed to send notification:', notifError);
+            }
+
             return {
               success: true,
               message: "Revision requested, letter returned to student",
