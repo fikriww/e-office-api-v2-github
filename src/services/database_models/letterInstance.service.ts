@@ -170,6 +170,7 @@ export abstract class LetterInstanceService {
       APPROVED: "Disetujui",
       REJECTED: "Ditolak",
       REVISION: "Perlu Revisi",
+      SUBMITTED: "Diajukan",
     };
 
     // Build timeline from approval steps
@@ -201,6 +202,7 @@ export abstract class LetterInstanceService {
       const meta = stepMeta[0];
       let action = meta.action;
       if (step.comments?.includes("Mengubah detail")) action = "Mengubah detail surat";
+      // For Mahasiswa (step 0), always show "Diajukan" as status label
       timeline.push({
         step: 0,
         role: meta.role,
@@ -208,7 +210,7 @@ export abstract class LetterInstanceService {
         actor: step.actor?.name || letter.createdBy?.name,
         action,
         status: step.status,
-        statusLabel: statusLabels[step.status] || step.status,
+        statusLabel: "Diajukan",
         date: step.updatedAt || step.createdAt,
         comments: step.comments,
         isCompleted: step.status === "APPROVED",
@@ -308,6 +310,10 @@ export abstract class LetterInstanceService {
 
     // Add final step for completed letters
     if (letter.status === "COMPLETED") {
+      // Get the last UPA approval step date, or use archivedAt/updatedAt
+      const upaStep = steps.find(s => s.stepNumber === 3 && s.status === "APPROVED");
+      const completedDate = upaStep?.updatedAt || upaStep?.createdAt || letter.archivedAt || letter.updatedAt;
+
       timeline.push({
         step: 4,
         role: "Selesai",
@@ -316,7 +322,7 @@ export abstract class LetterInstanceService {
         action: "Surat dapat diunduh",
         status: "APPROVED",
         statusLabel: "Selesai",
-        date: letter.archivedAt || letter.updatedAt,
+        date: completedDate,
         comments: letter.letterNumber ? `Nomor Surat: ${letter.letterNumber}` : null,
         isCompleted: true,
         isCurrent: false,
@@ -731,7 +737,7 @@ export abstract class LetterInstanceService {
 
     // Use provided letter number or generate automatically
     const letterNumber = data?.letterNumber || await this.generateLetterNumber(letter.letterType.name);
-    
+
     // Parse letterDate if provided, otherwise use current date
     let archivedAt = new Date();
     if (data?.letterDate) {

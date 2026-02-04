@@ -1,6 +1,7 @@
 // Public document verification route - no authentication required
 import { Elysia, t } from "elysia";
 import { Prisma } from "@backend/db/index.ts";
+import { LetterInstanceService } from "@backend/services/database_models/letterInstance.service";
 
 /**
  * SECURITY NOTES:
@@ -19,13 +20,20 @@ import { Prisma } from "@backend/db/index.ts";
  */
 
 interface TimelineStep {
-  stepNumber: number;
+  step: number;
+  role: string;
+  roleName: string;
+  actor?: string | null;
+  action: string;
   status: string;
-  actorName: string;
-  actorRole: string;
-  comments: string | null;
-  createdAt: string;
-  updatedAt: string | null;
+  statusLabel: string;
+  date?: string | null;
+  comments?: string | null;
+  isCompleted: boolean;
+  isCurrent: boolean;
+  isRejected: boolean;
+  isRevision: boolean;
+  isFuture?: boolean;
 }
 
 export interface VerificationResponse {
@@ -38,16 +46,16 @@ export interface VerificationResponse {
     status: string;
     createdAt: string;
     completedAt: string | null;
-    
+
     // Student info (limited for privacy)
     studentName: string;
     studentNim: string;
     programStudi: string;
     departemen: string;
-    
-    // Timeline/Riwayat Proses
+
+    // Timeline/Riwayat Proses - using same format as detail-surat
     timeline: TimelineStep[];
-    
+
     // Verification metadata
     verifiedAt: string;
     isValid: boolean;
@@ -74,12 +82,6 @@ export default new Elysia()
                     departemen: true,
                   },
                 },
-              },
-            },
-            approvalSteps: {
-              orderBy: { stepNumber: "asc" },
-              include: {
-                actor: true,
               },
             },
           },
@@ -109,15 +111,23 @@ export default new Elysia()
         // Get completion date from archived date or last approval step
         const completedAt = letter.archivedAt?.toISOString() || null;
 
-        // Build timeline from approval steps
-        const timeline: TimelineStep[] = letter.approvalSteps.map((step) => ({
-          stepNumber: step.stepNumber,
+        // Get timeline using the same service as detail-surat
+        const timelineData = await LetterInstanceService.getTimeline(documentId);
+        const timeline: TimelineStep[] = (timelineData?.timeline || []).map((step) => ({
+          step: step.step,
+          role: step.role,
+          roleName: step.roleName,
+          actor: step.actor,
+          action: step.action,
           status: step.status,
-          actorName: step.actor?.name || "Unknown",
-          actorRole: step.actorRole || "Unknown",
+          statusLabel: step.statusLabel,
+          date: step.date ? new Date(step.date).toISOString() : null,
           comments: step.comments,
-          createdAt: step.createdAt.toISOString(),
-          updatedAt: step.updatedAt?.toISOString() || null,
+          isCompleted: step.isCompleted,
+          isCurrent: step.isCurrent,
+          isRejected: step.isRejected,
+          isRevision: step.isRevision,
+          isFuture: step.isFuture,
         }));
 
         return {
@@ -161,3 +171,4 @@ export default new Elysia()
       },
     }
   );
+
