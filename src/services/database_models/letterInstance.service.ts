@@ -527,7 +527,26 @@ export abstract class LetterInstanceService {
             updatedAt: new Date(),
           },
           include: {
-            approvalSteps: true,
+            approvalSteps: {
+              include: {
+                actor: true,
+              },
+              orderBy: {
+                stepNumber: "asc",
+              },
+            },
+            letterType: true,
+            createdBy: {
+              include: {
+                mahasiswa: {
+                  include: {
+                    departemen: true,
+                    programStudi: true,
+                  },
+                },
+              },
+            },
+            attachments: true,
           },
         });
       }
@@ -547,7 +566,26 @@ export abstract class LetterInstanceService {
           },
         },
         include: {
-          approvalSteps: true,
+          approvalSteps: {
+            include: {
+              actor: true,
+            },
+            orderBy: {
+              stepNumber: "asc",
+            },
+          },
+          letterType: true,
+          createdBy: {
+            include: {
+              mahasiswa: {
+                include: {
+                  departemen: true,
+                  programStudi: true,
+                },
+              },
+            },
+          },
+          attachments: true,
         },
       });
     });
@@ -596,7 +634,26 @@ export abstract class LetterInstanceService {
           updatedAt: new Date(),
         },
         include: {
-          approvalSteps: true,
+          approvalSteps: {
+            include: {
+              actor: true,
+            },
+            orderBy: {
+              stepNumber: "asc",
+            },
+          },
+          letterType: true,
+          createdBy: {
+            include: {
+              mahasiswa: {
+                include: {
+                  departemen: true,
+                  programStudi: true,
+                },
+              },
+            },
+          },
+          attachments: true,
         },
       });
     });
@@ -679,19 +736,26 @@ export abstract class LetterInstanceService {
         where: { id: letterId },
         data: updateData,
         include: {
-          approvalSteps: true,
-          attachments: true,
+          approvalSteps: {
+            include: {
+              actor: true,
+            },
+            orderBy: {
+              stepNumber: "asc",
+            },
+          },
           letterType: true,
           createdBy: {
             include: {
               mahasiswa: {
                 include: {
-                  programStudi: true,
                   departemen: true,
+                  programStudi: true,
                 },
               },
             },
           },
+          attachments: true,
         },
       });
     });
