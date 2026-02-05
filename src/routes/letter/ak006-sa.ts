@@ -317,6 +317,11 @@ export default new Elysia()
         id: t.String(),
       }),
       body: t.Object({
+        nama_lengkap: t.Optional(t.String()),
+        nim: t.Optional(t.String()),
+        email: t.Optional(t.String()),
+        program_studi: t.Optional(t.String()),
+        departemen: t.Optional(t.String()),
         keperluan: t.Optional(t.String()),
         semester: t.Optional(t.Union([t.String(), t.Number()])),
         tahunAkademik: t.Optional(t.String()),
