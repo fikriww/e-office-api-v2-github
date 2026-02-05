@@ -881,7 +881,7 @@ export abstract class LetterInstanceService {
    * Resubmit letter after revision request
    * - Used when SA requested revision and mahasiswa updates the letter
    */
-  static async resubmitAfterRevision(letterId: string, userId: string, values: object, attachments?: any[]) {
+  static async resubmitAfterRevision(letterId: string, userId: string, values: object, attachments?: any[], comments?: string) {
     const letter = await this.getById(letterId);
     if (!letter) throw new Error("Letter not found");
 
@@ -935,7 +935,7 @@ export abstract class LetterInstanceService {
         status: "APPROVED",
         actorId: userId,
         actorRole: "mahasiswa",
-        comments: `Mengajukan ulang setelah revisi dari ${revisionStep.actorRole === 'supervisor_akademik' ? 'Supervisor Akademik' : revisionStep.actorRole === 'manager_tu' ? 'Manajer TU' : 'pihak terkait'}`,
+        comments: comments !== undefined ? comments : `Mengajukan ulang setelah revisi dari ${revisionStep.actorRole === 'supervisor_akademik' ? 'Supervisor Akademik' : revisionStep.actorRole === 'manager_tu' ? 'Manajer TU' : 'pihak terkait'}`,
       },
     });
 
@@ -957,7 +957,7 @@ export abstract class LetterInstanceService {
    * - Used when mahasiswa wants to change details before SA verifies
    * - Adds a timeline entry showing mahasiswa changed details
    */
-  static async selfRevise(letterId: string, userId: string, values: object, attachments?: any[]) {
+  static async selfRevise(letterId: string, userId: string, values: object, attachments?: any[], comments?: string) {
     const letter = await this.getById(letterId);
     if (!letter) throw new Error("Letter not found");
 
@@ -1008,7 +1008,7 @@ export abstract class LetterInstanceService {
         status: "APPROVED",
         actorId: userId,
         actorRole: "mahasiswa",
-        comments: "Mengubah detail surat",
+        comments: comments !== undefined ? comments : "Mengubah detail surat",
       },
     });
 
