@@ -173,12 +173,12 @@ export default new Elysia()
           nip_pensiun_ortu_wali: body.nip_pensiun_ortu_wali,
           golongan_ortu_wali: body.golongan_ortu_wali,
           instansi_ortu_wali: body.instansi_ortu_wali,
-          // Identity fields - stored in values for persistence
-          nama_lengkap: mahasiswa.user.name,
-          nim: mahasiswa.nim,
-          email: mahasiswa.user.email,
-          program_studi: mahasiswa.programStudi?.name || '',
-          departemen: mahasiswa.departemen?.name || '',
+          // Identity fields - use submitted values or fallback to mahasiswa data
+          nama_lengkap: body.nama_lengkap || mahasiswa.user.name,
+          nim: body.nim || mahasiswa.nim,
+          email: body.email || mahasiswa.user.email,
+          program_studi: body.program_studi || mahasiswa.programStudi?.name || '',
+          departemen: body.departemen || mahasiswa.departemen?.name || '',
         },
         attachments: body.attachments,
       });
@@ -215,6 +215,12 @@ export default new Elysia()
         nip_pensiun_ortu_wali: t.Optional(t.String()),
         golongan_ortu_wali: t.Optional(t.String()),
         instansi_ortu_wali: t.Optional(t.String()),
+        // Identity fields that can be edited by user
+        nama_lengkap: t.Optional(t.String()),
+        nim: t.Optional(t.String()),
+        email: t.Optional(t.String()),
+        departemen: t.Optional(t.String()),
+        program_studi: t.Optional(t.String()),
         attachments: t.Optional(
           t.Array(
             t.Object({
@@ -263,6 +269,12 @@ export default new Elysia()
           nip_pensiun_ortu_wali: body.nip_pensiun_ortu_wali,
           golongan_ortu_wali: body.golongan_ortu_wali,
           instansi_ortu_wali: body.instansi_ortu_wali,
+          // Identity fields that can be edited
+          nama_lengkap: body.nama_lengkap,
+          nim: body.nim,
+          email: body.email,
+          departemen: body.departemen,
+          program_studi: body.program_studi,
         };
 
         if (isRevisionForMahasiswa) {
@@ -312,6 +324,23 @@ export default new Elysia()
         nip_pensiun_ortu_wali: t.Optional(t.String()),
         golongan_ortu_wali: t.Optional(t.String()),
         instansi_ortu_wali: t.Optional(t.String()),
+        // Identity fields that can be edited
+        nama_lengkap: t.Optional(t.String()),
+        nim: t.Optional(t.String()),
+        email: t.Optional(t.String()),
+        departemen: t.Optional(t.String()),
+        program_studi: t.Optional(t.String()),
+        attachments: t.Optional(
+          t.Array(
+            t.Object({
+              url: t.String(),
+              filename: t.String(),
+              originalName: t.String(),
+              mimeType: t.Optional(t.String()),
+              size: t.Optional(t.Number()),
+            })
+          )
+        ),
       }),
     }
   )

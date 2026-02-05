@@ -295,13 +295,19 @@ export abstract class LetterInstanceService {
     }
 
     // Sort timeline chronologically by date
-    // Future entries (no date) go at the end, sorted by step number
+    // Order: completed/rejected/revision entries by date -> current PENDING step -> future entries
     timeline.sort((a, b) => {
       // Future entries go at the end
       if (a.isFuture && !b.isFuture) return 1;
       if (!a.isFuture && b.isFuture) return -1;
       // Both are future - sort by step number
       if (a.isFuture && b.isFuture) return a.step - b.step;
+
+      // Current PENDING step should come after all completed/rejected/revision entries
+      // but before future entries
+      if (a.isCurrent && !b.isCurrent && !b.isFuture) return 1;
+      if (!a.isCurrent && b.isCurrent && !a.isFuture) return -1;
+
       // Both have dates - sort chronologically
       const dateA = a.date ? new Date(a.date).getTime() : 0;
       const dateB = b.date ? new Date(b.date).getTime() : 0;
@@ -1005,6 +1011,23 @@ export abstract class LetterInstanceService {
         comments: "Mengubah detail surat",
       },
     });
+
+    // Update existing PENDING SA step to show change detected, then create new PENDING step
+    // This ensures timeline shows: Mahasiswa update -> SA needs to verify again
+    const existingSAStep = letter.approvalSteps?.find(
+      s => s.stepNumber === STEP_SA && s.status === "PENDING"
+    );
+
+    if (existingSAStep) {
+      // Mark existing SA step as "updated" (we'll keep it PENDING but update timestamp)
+      // This is so the timeline shows that SA verification is still needed after the change
+      await Prisma.letterApprovalStep.update({
+        where: { id: existingSAStep.id },
+        data: {
+          updatedAt: new Date(),
+        },
+      });
+    }
 
     return this.getById(letterId);
   }
