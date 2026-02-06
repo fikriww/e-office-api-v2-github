@@ -31,10 +31,13 @@ export default new Elysia().use(authGuardPlugin).get(
 		});
 
 		return {
-			...user,
-			roles,
-			mahasiswa: fullUser?.mahasiswa,
-			pegawai: fullUser?.pegawai,
+			success: true,
+			data: {
+				...user,
+				roles,
+				mahasiswa: fullUser?.mahasiswa,
+				pegawai: fullUser?.pegawai,
+			},
 		};
 	},
 	{},
