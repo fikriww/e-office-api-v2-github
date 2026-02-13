@@ -789,10 +789,19 @@ export default new Elysia()
         return status(404, { success: false, message: "User not found" });
       }
 
-      // Soft delete user
+      // Remove account records so BetterAuth won't conflict
+      await Prisma.account.deleteMany({ where: { userId: id } });
+
+      // Remove sessions
+      await Prisma.session.deleteMany({ where: { userId: id } });
+
+      // Soft delete user and mangle email to free up the unique constraint
       await Prisma.user.update({
         where: { id },
-        data: { deletedAt: new Date() },
+        data: {
+          deletedAt: new Date(),
+          email: `deleted_${Date.now()}_${targetUser.email}`,
+        },
       });
 
       return {
@@ -810,9 +819,9 @@ export default new Elysia()
   .post(
     "/users/mahasiswa",
     async ({ body, status }) => {
-      // Check if email already exists
-      const existingUser = await Prisma.user.findUnique({
-        where: { email: body.email },
+      // Check if email already exists (exclude soft-deleted users)
+      const existingUser = await Prisma.user.findFirst({
+        where: { email: body.email, deletedAt: null },
       });
       if (existingUser) {
         return status(400, {
@@ -916,9 +925,9 @@ export default new Elysia()
   .post(
     "/users/pegawai",
     async ({ body, status }) => {
-      // Check if email already exists
-      const existingUser = await Prisma.user.findUnique({
-        where: { email: body.email },
+      // Check if email already exists (exclude soft-deleted users)
+      const existingUser = await Prisma.user.findFirst({
+        where: { email: body.email, deletedAt: null },
       });
       if (existingUser) {
         return status(400, {
@@ -930,6 +939,12 @@ export default new Elysia()
       // Validate password
       if (!body.password || body.password.length < 8) {
         return status(400, { success: false, message: "Password minimal 8 karakter" });
+      }
+
+      // Validate role exists
+      const role = await Prisma.role.findUnique({ where: { name: body.role } });
+      if (!role) {
+        return status(400, { success: false, message: "Role tidak ditemukan" });
       }
 
       // Create user
@@ -964,6 +979,9 @@ export default new Elysia()
         },
       });
 
+      // Assign role
+      await assignRoleToUser(user.id, body.role);
+
       // Return full user data
       const fullUser = await Prisma.user.findUnique({
         where: { id: user.id },
@@ -985,6 +1003,7 @@ export default new Elysia()
         password: t.String(),
         nip: t.String(),
         jabatan: t.String(),
+        role: t.String(),
         noHp: t.Optional(t.String()),
       }),
     }
