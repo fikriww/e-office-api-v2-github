@@ -199,9 +199,9 @@ model Pegawai {
 
   userId         String        @unique
   user           User          @relation(fields: [userId], references: [id])
-  departemenId   String
+  departemenId   String?
   departemen     Departemen?   @relation(fields: [departemenId], references: [id])
-  programStudiId String
+  programStudiId String?
   programStudi   ProgramStudi? @relation(fields: [programStudiId], references: [id])
 
   createdAt DateTime? @default(now())

@@ -912,6 +912,84 @@ export default new Elysia()
     }
   )
 
+  // Create pegawai user (user + pegawai record + role assignment)
+  .post(
+    "/users/pegawai",
+    async ({ body, status }) => {
+      // Check if email already exists
+      const existingUser = await Prisma.user.findUnique({
+        where: { email: body.email },
+      });
+      if (existingUser) {
+        return status(400, {
+          success: false,
+          message: "Email sudah terdaftar",
+        });
+      }
+
+      // Validate password
+      if (!body.password || body.password.length < 8) {
+        return status(400, { success: false, message: "Password minimal 8 karakter" });
+      }
+
+      // Create user
+      const user = await Prisma.user.create({
+        data: {
+          name: body.name,
+          email: body.email,
+          emailVerified: false,
+          isAnonymous: false,
+        },
+      });
+
+      // Create credential account with hashed password
+      const hashedPw = await hashPassword(body.password);
+      await Prisma.account.create({
+        data: {
+          id: randomBytes(16).toString("hex"),
+          accountId: user.email,
+          providerId: "credential",
+          userId: user.id,
+          password: hashedPw,
+        },
+      });
+
+      // Create pegawai record
+      await Prisma.pegawai.create({
+        data: {
+          userId: user.id,
+          nip: body.nip,
+          jabatan: body.jabatan,
+          noHp: body.noHp || null,
+        },
+      });
+
+      // Return full user data
+      const fullUser = await Prisma.user.findUnique({
+        where: { id: user.id },
+        include: userInclude,
+      });
+      const roles = await getUserRoles(user.id);
+
+      return {
+        success: true,
+        message: "Pegawai berhasil ditambahkan",
+        data: { ...fullUser, roles },
+      };
+    },
+    {
+      ...requireRole(SUPERADMIN_ROLE),
+      body: t.Object({
+        name: t.String(),
+        email: t.String(),
+        password: t.String(),
+        nip: t.String(),
+        jabatan: t.String(),
+        noHp: t.Optional(t.String()),
+      }),
+    }
+  )
+
   // Get all departemen (for dropdowns)
   .get(
     "/departemen",
