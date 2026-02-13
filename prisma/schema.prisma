@@ -289,12 +289,15 @@ model LetterType {
 model LetterTemplate {
   id String @id @default(cuid())
 
-  versionName      String @map("version_name")
-  schemaDefinition Json   @map("schema_defintion")
-  formFields       Json   @map("form_fields")
+  versionName      String   @map("version_name")
+  schemaDefinition Json     @map("schema_defintion")
+  formFields       Json     @map("form_fields")
+  isActive         Boolean  @default(true) @map("is_active")
 
   letterTypeId String     @map("letter_type_id")
   LetterType   LetterType @relation(fields: [letterTypeId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("letter_template")
 }
@@ -313,10 +316,11 @@ enum FieldType {
 model LetterInstance {
   id String @id @default(cuid())
 
-  schema      Json
-  values      Json
-  status      LetterStatus @default(PENDING)
-  currentStep Int          @default(1)
+  schema         Json
+  values         Json
+  templateConfig Json?  @map("template_config") // Snapshot of template config at creation time
+  status         LetterStatus @default(PENDING)
+  currentStep    Int          @default(1)
 
   // Temporary agenda number (set on creation)
   temporaryAgenda String? @map("temporary_agenda")

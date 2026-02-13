@@ -155,11 +155,23 @@ export default new Elysia()
         });
       }
 
+      // Snapshot the current active template config so this letter
+      // is forever rendered with the template that was active at creation time.
+      let templateConfigSnapshot: object | undefined;
+      const activeTemplate = await Prisma.letterTemplate.findFirst({
+        where: { letterTypeId: letterType.id, isActive: true },
+        orderBy: { createdAt: "desc" },
+      });
+      if (activeTemplate) {
+        templateConfigSnapshot = activeTemplate.schemaDefinition as object;
+      }
+
       // Create the letter
       const letter = await LetterInstanceService.create({
         letterTypeId: letterType.id,
         createdById: user.id,
         schema: AK006_SCHEMA,
+        templateConfig: templateConfigSnapshot,
         values: {
           keperluan: body.keperluan,
           semester: body.semester,

@@ -1,6 +1,7 @@
 import { config } from "./config.ts";
 import { Prisma } from "@backend/db/index.ts";
 import { app } from "./server.ts";
+import { LetterInstanceService } from "@backend/services/database_models/letterInstance.service.ts";
 
 const signals = ["SIGINT", "SIGTERM"];
 
@@ -22,6 +23,13 @@ process.on("unhandledRejection", (error) => {
 
 await Prisma.$connect();
 console.log("Database was connected!");
+
+// Auto-backfill templateConfig for letters created before template versioning
+LetterInstanceService.backfillAllTemplateConfigs()
+	.then((count) => {
+		if (count > 0) console.log(`Backfilled templateConfig for ${count} existing letter(s)`);
+	})
+	.catch((err) => console.error("Template backfill failed (non-fatal):", err));
 
 app.listen(config.PORT, () =>
 	console.log(`Server started at ${app.server?.url.origin}`),

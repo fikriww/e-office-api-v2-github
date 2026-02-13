@@ -4,6 +4,7 @@ import { LetterInstanceService, LETTER_TYPE_AK006, STEP_SA, STEP_MTU, STEP_UPA }
 import { notificationService } from "@backend/services/notification.service.ts";
 import { Prisma } from "@backend/db/index.ts";
 import { getUserRoles, assignRoleToUser, removeRoleFromUser } from "@backend/lib/casbin.ts";
+import { getDefaultAK006Template } from "@backend/constants/default-templates.ts";
 import { Elysia, t } from "elysia";
 
 const SUPERADMIN_ROLE = "superadmin";
@@ -165,7 +166,7 @@ export default new Elysia()
           case "supervisor_akademik":
             where.currentStep = STEP_SA;
             break;
-          case "manajer_tu":
+          case "manager_tu":
             where.currentStep = STEP_MTU;
             break;
           case "upa":
@@ -189,7 +190,7 @@ export default new Elysia()
         ];
       }
 
-      const [letters, total] = await Promise.all([
+      const [rawLetters, total] = await Promise.all([
         Prisma.letterInstance.findMany({
           where,
           include: letterInclude,
@@ -199,6 +200,9 @@ export default new Elysia()
         }),
         Prisma.letterInstance.count({ where }),
       ]);
+
+      // Ensure templateConfig is backfilled for old letters
+      const letters = await LetterInstanceService.ensureTemplateConfigMany(rawLetters);
 
       return {
         success: true,
@@ -865,5 +869,146 @@ export default new Elysia()
     {
       ...requireRole(SUPERADMIN_ROLE),
       params: t.Object({ userId: t.String() }),
+    }
+  )
+
+  // ==================== TEMPLATE BACKFILL ====================
+
+  // Backfill templateConfig for all existing letters that don't have one.
+  // This is a one-time migration helper. Safe to call multiple times.
+  .post(
+    "/template/backfill",
+    async () => {
+      const count = await LetterInstanceService.backfillAllTemplateConfigs();
+      return {
+        success: true,
+        message: `Backfilled templateConfig for ${count} letter(s)`,
+        data: { updatedCount: count },
+      };
+    },
+    {
+      ...requireRole(SUPERADMIN_ROLE),
+    }
+  )
+
+  // ==================== AK006 TEMPLATE MANAGEMENT ====================
+
+  // Get AK006 template configuration
+  .get(
+    "/template/ak006",
+    async ({ status, set }) => {
+      // Prevent caching so template updates are always reflected
+      set.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+      set.headers['Pragma'] = 'no-cache';
+
+      // Find AK006 letter type
+      const letterType = await Prisma.letterType.findFirst({
+        where: { name: { contains: "AK006", mode: "insensitive" } },
+      });
+
+      if (!letterType) {
+        // Return default template config if no letter type found
+        return {
+          success: true,
+          data: {
+            id: null,
+            letterTypeId: null,
+            config: getDefaultAK006Template(),
+          },
+        };
+      }
+
+      // Find the latest active template for AK006
+      const template = await Prisma.letterTemplate.findFirst({
+        where: { letterTypeId: letterType.id, isActive: true },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (!template) {
+        return {
+          success: true,
+          data: {
+            id: null,
+            letterTypeId: letterType.id,
+            config: getDefaultAK006Template(),
+          },
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          id: template.id,
+          letterTypeId: letterType.id,
+          config: template.schemaDefinition as Record<string, any>,
+        },
+      };
+    },
+    {
+      ...requireRole(SUPERADMIN_ROLE),
+    }
+  )
+
+  // Update/Create AK006 template configuration
+  // VERSIONING: Always creates a new template version. Old letters keep their
+  // snapshot in templateConfig so they are not affected by this change.
+  .put(
+    "/template/ak006",
+    async ({ body, status }) => {
+      // Find AK006 letter type
+      let letterType = await Prisma.letterType.findFirst({
+        where: { name: { contains: "AK006", mode: "insensitive" } },
+      });
+
+      // Create letter type if not exists
+      if (!letterType) {
+        letterType = await Prisma.letterType.create({
+          data: {
+            name: "AK006",
+            description: "Surat Keterangan Masih Kuliah",
+          },
+        });
+      }
+
+      // Deactivate all existing templates for this letter type
+      await Prisma.letterTemplate.updateMany({
+        where: { letterTypeId: letterType.id, isActive: true },
+        data: { isActive: false },
+      });
+
+      // Count existing templates to auto-generate version name
+      const templateCount = await Prisma.letterTemplate.count({
+        where: { letterTypeId: letterType.id },
+      });
+      const nextVersion = `v${templateCount + 1}`;
+
+      // Create NEW template version (always create, never update)
+      const template = await Prisma.letterTemplate.create({
+        data: {
+          letterTypeId: letterType.id,
+          schemaDefinition: body.config as any,
+          formFields: {},
+          versionName: body.versionName || nextVersion,
+          isActive: true,
+        },
+      });
+
+      return {
+        success: true,
+        message: "Template AK006 berhasil disimpan sebagai versi baru",
+        data: {
+          id: template.id,
+          letterTypeId: letterType.id,
+          versionName: template.versionName,
+          config: template.schemaDefinition as Record<string, any>,
+        },
+      };
+    },
+    {
+      ...requireRole(SUPERADMIN_ROLE),
+      body: t.Object({
+        config: t.Any(),
+        versionName: t.Optional(t.String()),
+      }),
     }
   );

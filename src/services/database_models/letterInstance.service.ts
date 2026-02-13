@@ -1,6 +1,8 @@
 // letterInstance.service.ts
 import { Prisma } from "@backend/db/index.ts";
 import type { LetterStatus, ApprovalStepStatus } from "@backend/generated/prisma/client.ts";
+import { Prisma as PrismaNamespace } from "@backend/generated/prisma/client.ts";
+import { getDefaultAK006Template } from "@backend/constants/default-templates.ts";
 
 // Letter type code for AK006 (Surat Pernyataan Masih Kuliah)
 export const LETTER_TYPE_AK006 = "AK006";
@@ -11,6 +13,140 @@ export const STEP_MTU = 2;
 export const STEP_UPA = 3;
 
 export abstract class LetterInstanceService {
+  /**
+   * Ensure a letter instance has templateConfig filled in.
+   * For letters created before template versioning, templateConfig is null.
+   *
+   * Logic:
+   * - If the letter was created BEFORE the oldest DB template, use the
+   *   hardcoded default (that was the active template at creation time).
+   * - Otherwise pick the oldest DB template (the one that was active when
+   *   the letter was created).
+   *
+   * Also persists the backfill to the database so it only happens once.
+   */
+  static async ensureTemplateConfig<T extends { id: string; createdAt?: Date | string | null; templateConfig?: any; letterTypeId?: string; letterType?: { id: string } | null }>(
+    letter: T | null
+  ): Promise<T | null> {
+    if (!letter) return null;
+    if (letter.templateConfig != null) return letter;
+
+    const letterTypeId = letter.letterTypeId || letter.letterType?.id;
+    if (!letterTypeId) return letter;
+
+    // Find the OLDEST template for this letter type
+    const oldestTemplate = await Prisma.letterTemplate.findFirst({
+      where: { letterTypeId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    let config: any;
+
+    if (!oldestTemplate) {
+      // No templates in DB at all — use hardcoded default
+      config = getDefaultAK006Template();
+    } else {
+      // Compare letter creation time with oldest template creation time
+      const letterDate = letter.createdAt ? new Date(letter.createdAt) : null;
+      const templateDate = new Date(oldestTemplate.createdAt);
+
+      if (letterDate && letterDate < templateDate) {
+        // Letter was created BEFORE any template existed — use hardcoded default
+        config = getDefaultAK006Template();
+      } else {
+        // Letter was created after templates existed — use the oldest template
+        config = oldestTemplate.schemaDefinition;
+      }
+    }
+
+    // Persist the backfill so this query doesn't repeat
+    await Prisma.letterInstance.update({
+      where: { id: letter.id },
+      data: { templateConfig: config },
+    }).catch(() => { /* ignore if update fails */ });
+
+    return { ...letter, templateConfig: config };
+  }
+
+  /**
+   * Ensure templateConfig for an array of letter instances
+   */
+  static async ensureTemplateConfigMany<T extends { id: string; templateConfig?: any; letterTypeId?: string; letterType?: { id: string } | null }>(
+    letters: T[]
+  ): Promise<T[]> {
+    return Promise.all(letters.map(l => this.ensureTemplateConfig(l) as Promise<T>));
+  }
+
+  /**
+   * Bulk backfill all existing letters that don't have templateConfig.
+   * - Letters created BEFORE the oldest DB template get the hardcoded defaults.
+   * - Letters created AFTER get the oldest DB template's config.
+   * Returns count of letters updated.
+   */
+  static async backfillAllTemplateConfigs(): Promise<number> {
+    // Get all letter types that have templates
+    const letterTypes = await Prisma.letterType.findMany({
+      include: {
+        templates: {
+          orderBy: { createdAt: "asc" },
+          take: 1, // oldest template
+        },
+      },
+    });
+
+    let totalUpdated = 0;
+    const defaultConfig = getDefaultAK006Template();
+
+    for (const lt of letterTypes) {
+      if (lt.templates.length === 0) {
+        // No templates exist at all — backfill everything with hardcoded default
+        const result = await Prisma.letterInstance.updateMany({
+          where: {
+            letterTypeId: lt.id,
+            templateConfig: { equals: PrismaNamespace.DbNull },
+          },
+          data: {
+            templateConfig: defaultConfig,
+          },
+        });
+        totalUpdated += result.count;
+        continue;
+      }
+
+      const oldestTemplate = lt.templates[0];
+      const oldestConfig = oldestTemplate.schemaDefinition;
+      const oldestDate = oldestTemplate.createdAt;
+
+      // 1) Letters created BEFORE the oldest template → hardcoded defaults
+      const beforeResult = await Prisma.letterInstance.updateMany({
+        where: {
+          letterTypeId: lt.id,
+          templateConfig: { equals: PrismaNamespace.DbNull },
+          createdAt: { lt: oldestDate },
+        },
+        data: {
+          templateConfig: defaultConfig,
+        },
+      });
+      totalUpdated += beforeResult.count;
+
+      // 2) Letters created AFTER the oldest template → oldest template config
+      const afterResult = await Prisma.letterInstance.updateMany({
+        where: {
+          letterTypeId: lt.id,
+          templateConfig: { equals: PrismaNamespace.DbNull },
+          createdAt: { gte: oldestDate },
+        },
+        data: {
+          templateConfig: oldestConfig,
+        },
+      });
+      totalUpdated += afterResult.count;
+    }
+
+    return totalUpdated;
+  }
+
   /**
    * Generate temporary agenda number on letter creation
    * Format: [queue]/UN7.F8.4/AK/TBD/[year]
@@ -52,6 +188,7 @@ export abstract class LetterInstanceService {
     createdById: string;
     schema: object;
     values: object;
+    templateConfig?: object;
     attachments?: Array<{
       url: string;
       filename: string;
@@ -70,6 +207,7 @@ export abstract class LetterInstanceService {
         createdById: data.createdById,
         schema: data.schema,
         values: data.values,
+        templateConfig: data.templateConfig || undefined,
         status: "PENDING",
         currentStep: STEP_SA,
         temporaryAgenda,
@@ -119,9 +257,10 @@ export abstract class LetterInstanceService {
 
   /**
    * Get letter by ID with all relations
+   * Automatically backfills templateConfig for letters created before versioning.
    */
   static async getById(id: string) {
-    return Prisma.letterInstance.findUnique({
+    const letter = await Prisma.letterInstance.findUnique({
       where: { id },
       include: {
         letterType: true,
@@ -147,6 +286,8 @@ export abstract class LetterInstanceService {
         },
       },
     });
+
+    return this.ensureTemplateConfig(letter);
   }
 
   /**
@@ -347,6 +488,7 @@ export abstract class LetterInstanceService {
 
   /**
    * Get letters created by a user
+   * Automatically backfills templateConfig for letters created before versioning.
    */
   static async getByCreator(userId: string, letterTypeCode?: string) {
     const whereClause: any = { createdById: userId };
@@ -355,7 +497,7 @@ export abstract class LetterInstanceService {
       whereClause.letterType = { name: letterTypeCode };
     }
 
-    return Prisma.letterInstance.findMany({
+    const letters = await Prisma.letterInstance.findMany({
       where: whereClause,
       include: {
         letterType: true,
@@ -369,6 +511,8 @@ export abstract class LetterInstanceService {
         createdAt: "desc",
       },
     });
+
+    return this.ensureTemplateConfigMany(letters);
   }
 
   /**
@@ -408,7 +552,7 @@ export abstract class LetterInstanceService {
       whereClause.letterType = { name: letterTypeName };
     }
 
-    return Prisma.letterInstance.findMany({
+    const letters = await Prisma.letterInstance.findMany({
       where: whereClause,
       include: {
         letterType: true,
@@ -432,6 +576,8 @@ export abstract class LetterInstanceService {
         createdAt: "asc",
       },
     });
+
+    return this.ensureTemplateConfigMany(letters);
   }
 
   /**
@@ -454,7 +600,7 @@ export abstract class LetterInstanceService {
       whereClause.letterType = { name: letterTypeName };
     }
 
-    return Prisma.letterInstance.findMany({
+    const letters = await Prisma.letterInstance.findMany({
       where: whereClause,
       include: {
         letterType: true,
@@ -478,6 +624,8 @@ export abstract class LetterInstanceService {
         createdAt: "desc",
       },
     });
+
+    return this.ensureTemplateConfigMany(letters);
   }
 
   /**
@@ -891,7 +1039,7 @@ export abstract class LetterInstanceService {
       whereClause.letterType = { name: letterTypeName };
     }
 
-    return Prisma.letterInstance.findMany({
+    const letters = await Prisma.letterInstance.findMany({
       where: whereClause,
       include: {
         letterType: true,
@@ -916,6 +1064,8 @@ export abstract class LetterInstanceService {
         archivedAt: "desc",
       },
     });
+
+    return this.ensureTemplateConfigMany(letters);
   }
 
   /**
