@@ -5,6 +5,8 @@ import { notificationService } from "@backend/services/notification.service.ts";
 import { Prisma } from "@backend/db/index.ts";
 import { getUserRoles, assignRoleToUser, removeRoleFromUser } from "@backend/lib/casbin.ts";
 import { getDefaultAK006Template } from "@backend/constants/default-templates.ts";
+import { hashPassword } from "better-auth/crypto";
+import { randomBytes } from "crypto";
 import { Elysia, t } from "elysia";
 
 const SUPERADMIN_ROLE = "superadmin";
@@ -801,6 +803,147 @@ export default new Elysia()
     {
       ...requireRole(SUPERADMIN_ROLE),
       params: t.Object({ id: t.String() }),
+    }
+  )
+
+  // Create mahasiswa user (user + mahasiswa record + role assignment)
+  .post(
+    "/users/mahasiswa",
+    async ({ body, status }) => {
+      // Check if email already exists
+      const existingUser = await Prisma.user.findUnique({
+        where: { email: body.email },
+      });
+      if (existingUser) {
+        return status(400, {
+          success: false,
+          message: "Email sudah terdaftar",
+        });
+      }
+
+      // Validate departemen exists
+      const dept = await Prisma.departemen.findUnique({ where: { id: body.departemenId } });
+      if (!dept) {
+        return status(400, { success: false, message: "Departemen tidak ditemukan" });
+      }
+
+      // Validate prodi exists
+      const prodi = await Prisma.programStudi.findUnique({ where: { id: body.programStudiId } });
+      if (!prodi) {
+        return status(400, { success: false, message: "Program studi tidak ditemukan" });
+      }
+
+      // Validate password
+      if (!body.password || body.password.length < 8) {
+        return status(400, { success: false, message: "Password minimal 8 karakter" });
+      }
+
+      // Create user
+      const user = await Prisma.user.create({
+        data: {
+          name: body.name,
+          email: body.email,
+          emailVerified: false,
+          isAnonymous: false,
+        },
+      });
+
+      // Create credential account with hashed password
+      const hashedPw = await hashPassword(body.password);
+      await Prisma.account.create({
+        data: {
+          id: randomBytes(16).toString("hex"),
+          accountId: user.email,
+          providerId: "credential",
+          userId: user.id,
+          password: hashedPw,
+        },
+      });
+
+      // Create mahasiswa record
+      await Prisma.mahasiswa.create({
+        data: {
+          userId: user.id,
+          nim: body.nim,
+          tahunMasuk: body.tahunMasuk,
+          noHp: body.noHp,
+          alamat: body.alamat || null,
+          tempatLahir: body.tempatLahir || null,
+          tanggalLahir: body.tanggalLahir ? new Date(body.tanggalLahir) : null,
+          departemenId: body.departemenId,
+          programStudiId: body.programStudiId,
+        },
+      });
+
+      // Assign mahasiswa role
+      const mahasiswaRole = await Prisma.role.findUnique({ where: { name: "mahasiswa" } });
+      if (mahasiswaRole) {
+        await assignRoleToUser(user.id, "mahasiswa");
+      }
+
+      // Return full user data
+      const fullUser = await Prisma.user.findUnique({
+        where: { id: user.id },
+        include: userInclude,
+      });
+      const roles = await getUserRoles(user.id);
+
+      return {
+        success: true,
+        message: "Mahasiswa berhasil ditambahkan",
+        data: { ...fullUser, roles },
+      };
+    },
+    {
+      ...requireRole(SUPERADMIN_ROLE),
+      body: t.Object({
+        name: t.String(),
+        email: t.String(),
+        password: t.String(),
+        nim: t.String(),
+        tahunMasuk: t.String(),
+        noHp: t.String(),
+        alamat: t.Optional(t.String()),
+        tempatLahir: t.Optional(t.String()),
+        tanggalLahir: t.Optional(t.String()),
+        departemenId: t.String(),
+        programStudiId: t.String(),
+      }),
+    }
+  )
+
+  // Get all departemen (for dropdowns)
+  .get(
+    "/departemen",
+    async () => {
+      const departemen = await Prisma.departemen.findMany({
+        where: { deletedAt: null },
+        orderBy: { name: "asc" },
+      });
+      return { success: true, data: departemen };
+    },
+    { ...requireRole(SUPERADMIN_ROLE) }
+  )
+
+  // Get program studi (optionally filtered by departemenId)
+  .get(
+    "/prodi",
+    async ({ query }) => {
+      const where: any = { deletedAt: null };
+      if (query.departemenId) {
+        where.departemenId = query.departemenId;
+      }
+      const prodi = await Prisma.programStudi.findMany({
+        where,
+        orderBy: { name: "asc" },
+      });
+      return { success: true, data: prodi };
+    },
+    {
+      ...requireRole(SUPERADMIN_ROLE),
+      query: t.Object({
+        departemenId: t.Optional(t.String()),
+      }),
     }
   )
 
