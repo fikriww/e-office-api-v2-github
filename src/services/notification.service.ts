@@ -162,6 +162,14 @@ export const notificationService = {
         mahasiswaName: string,
         letterTypeName: string
     ) {
+        // Also notify Superadmin
+        await this.createNotificationForRole('superadmin', {
+            type: 'NEEDS_VERIFICATION',
+            title: 'Surat Baru (Superadmin)',
+            message: `${mahasiswaName} mengajukan ${letterTypeName}.`,
+            letterInstanceId,
+        });
+
         return this.createNotificationForRole('supervisor_akademik', {
             type: 'NEEDS_VERIFICATION',
             title: 'Surat Baru Perlu Diverifikasi',
@@ -178,6 +186,14 @@ export const notificationService = {
         mahasiswaName: string,
         letterTypeName: string
     ) {
+        // Also notify Superadmin
+        await this.createNotificationForRole('superadmin', {
+            type: 'NEEDS_SIGNATURE',
+            title: 'Surat Perlu Ditandatangani (Superadmin)',
+            message: `${letterTypeName} dari ${mahasiswaName} telah diverifikasi.`,
+            letterInstanceId,
+        });
+
         return this.createNotificationForRole('manager_tu', {
             type: 'NEEDS_SIGNATURE',
             title: 'Surat Perlu Ditandatangani',
@@ -194,6 +210,14 @@ export const notificationService = {
         mahasiswaName: string,
         letterTypeName: string
     ) {
+        // Also notify Superadmin
+        await this.createNotificationForRole('superadmin', {
+            type: 'NEEDS_NUMBERING',
+            title: 'Surat Perlu Diberi Penomoran (Superadmin)',
+            message: `${letterTypeName} dari ${mahasiswaName} telah ditandatangani.`,
+            letterInstanceId,
+        });
+
         return this.createNotificationForRole('upa', {
             type: 'NEEDS_NUMBERING',
             title: 'Surat Perlu Diberi Penomoran',
@@ -212,6 +236,14 @@ export const notificationService = {
         comments: string,
         revisorRole: string
     ) {
+        // Notify Superadmin
+        await this.createNotificationForRole('superadmin', {
+            type: 'REVISION_REQUIRED',
+            title: 'Surat Revisi (Superadmin)',
+            message: `${letterTypeName} perlu direvisi oleh ${revisorRole}.`,
+            letterInstanceId,
+        });
+
         return this.createNotification({
             userId,
             type: 'REVISION_REQUIRED',
@@ -230,6 +262,14 @@ export const notificationService = {
         mahasiswaName: string,
         comments: string
     ) {
+        // Notify Superadmin
+        await this.createNotificationForRole('superadmin', {
+            type: 'REVISION_REQUIRED',
+            title: 'Surat Revisi ke SA (Superadmin)',
+            message: `${letterTypeName} dari ${mahasiswaName} dikembalikan ke SA.`,
+            letterInstanceId,
+        });
+
         return this.createNotificationForRole('supervisor_akademik', {
             type: 'REVISION_REQUIRED',
             title: 'Surat Perlu Direvisi',
@@ -248,6 +288,14 @@ export const notificationService = {
         comments: string,
         rejectorRole: string
     ) {
+        // Notify Superadmin
+        await this.createNotificationForRole('superadmin', {
+            type: 'LETTER_REJECTED',
+            title: 'Surat Ditolak (Superadmin)',
+            message: `${letterTypeName} ditolak oleh ${rejectorRole}.`,
+            letterInstanceId,
+        });
+
         return this.createNotification({
             userId,
             type: 'LETTER_REJECTED',
@@ -265,6 +313,14 @@ export const notificationService = {
         letterInstanceId: string,
         letterTypeName: string
     ) {
+        // Notify Superadmin
+        await this.createNotificationForRole('superadmin', {
+            type: 'LETTER_COMPLETED',
+            title: 'Surat Selesai (Superadmin)',
+            message: `${letterTypeName} selesai diproses.`,
+            letterInstanceId,
+        });
+
         return this.createNotification({
             userId,
             type: 'LETTER_COMPLETED',

@@ -1,7 +1,8 @@
+import { auth } from "@backend/lib/auth.ts";
 import { authGuardPlugin } from "@backend/middlewares/auth.ts";
 import { getUserRoles } from "@backend/lib/casbin.ts";
 import { Prisma } from "@backend/db/index.ts";
-import { Elysia } from "elysia";
+import { Elysia, t } from "elysia";
 
 export default new Elysia().use(authGuardPlugin).get(
 	"/",
@@ -41,4 +42,36 @@ export default new Elysia().use(authGuardPlugin).get(
 		};
 	},
 	{},
-);
+)
+	.post(
+		"/password",
+		async ({ body, headers }) => {
+			const { currentPassword, newPassword } = body;
+			try {
+				const data = await auth.api.changePassword({
+					body: {
+						currentPassword,
+						newPassword,
+						revokeOtherSessions: true,
+					},
+					headers,
+				});
+				return {
+					success: true,
+					data,
+				};
+			} catch (error: any) {
+				console.error("Change password error:", error);
+				return {
+					success: false,
+					message: error.body?.message || error.message || "Failed to change password",
+				};
+			}
+		},
+		{
+			body: t.Object({
+				currentPassword: t.String(),
+				newPassword: t.String(),
+			}),
+		},
+	);

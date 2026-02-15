@@ -683,6 +683,72 @@ export default new Elysia()
     }
   )
 
+  // Reset user password
+  .post(
+    "/users/:id/reset-password",
+    async ({ params: { id }, body, status }) => {
+      const user = await Prisma.user.findUnique({ where: { id } });
+
+      if (!user) {
+        return status(404, { success: false, message: "User not found" });
+      }
+
+      // Hash new password
+      const hashedPassword = await hashPassword(body.newPassword);
+
+      // Find credential account
+      const account = await Prisma.account.findFirst({
+        where: { userId: id }, // In better-auth, password is on account table. If multiple accounts, usually only credential one has password?
+        // Actually, if we update ALL accounts' password for this user it might be safer if schema allows?
+        // But let's look for one with providerId='credential' ideally.
+        // However, Prisma schema shows Account has password field.
+        // Let's filter by providerId='credential' to be safe.
+      });
+
+      // If we can't find specific credential account, we might look for ANY account with password capability?
+      // Simple approach: Update ALL accounts for this userId that have a password field (if any)?
+      // Or find credential specific.
+      const credentialAccount = await Prisma.account.findFirst({
+        where: { userId: id, providerId: "credential" }
+      });
+
+      if (credentialAccount) {
+        await Prisma.account.update({
+          where: { id: credentialAccount.id },
+          data: { password: hashedPassword }
+        });
+      } else {
+        // Create a credential account if it doesn't exist?
+        // For now, let's try to update ANY account if credential account not found but an account exists
+        const anyAccount = await Prisma.account.findFirst({ where: { userId: id } });
+        if (anyAccount) {
+          // CAUTION: This might add password to a Google account record which shouldn't happen.
+          // But if specific credential account is missing, maybe they signed up differently.
+          // Let's stick to erroring if no credential account.
+          return status(400, { success: false, message: "User does not have a credential account. Cannot reset password." });
+        }
+        return status(400, { success: false, message: "User has no accounts." });
+      }
+
+      // Revoke all sessions
+      await Prisma.session.deleteMany({
+        where: { userId: id },
+      });
+
+      return {
+        success: true,
+        message: "Password reset successfully",
+      };
+    },
+    {
+      ...requireRole(SUPERADMIN_ROLE),
+      params: t.Object({ id: t.String() }),
+      body: t.Object({
+        newPassword: t.String(),
+      }),
+    }
+  )
+
   // Assign role to user
   .post(
     "/users/:id/roles",
