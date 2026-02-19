@@ -13,4 +13,12 @@ export const config = {
 		.asString(),
 	DATABASE_URL: env.get("DATABASE_URL").required().asString(),
 	LOCK_STORE: env.get("LOCK_STORE").default("memory").asEnum(["memory"]),
+
+	// SMTP settings
+	SMTP_HOST: env.get("SMTP_HOST").default("smtp.gmail.com").asString(),
+	SMTP_PORT: env.get("SMTP_PORT").default(587).asPortNumber(),
+	SMTP_SECURE: env.get("SMTP_SECURE").default("false").asBool(),
+	SMTP_USER: env.get("SMTP_USER").default("eofficefsm@gmail.com").asString(),
+	SMTP_PASS: env.get("SMTP_PASS").default("").asString(),
+	SMTP_FROM: env.get("SMTP_FROM").default("E-Office FSM <eofficefsm@gmail.com>").asString(),
 };

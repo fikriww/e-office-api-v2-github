@@ -2,6 +2,7 @@
 import { authGuardPlugin, requireRole } from "@backend/middlewares/auth.ts";
 import { LetterInstanceService, LETTER_TYPE_AK006, STEP_SA, STEP_MTU, STEP_UPA } from "@backend/services/database_models/letterInstance.service.ts";
 import { notificationService } from "@backend/services/notification.service.ts";
+import { sendNewUserWelcomeEmail } from "@backend/services/email.service.ts";
 import { Prisma } from "@backend/db/index.ts";
 import { getUserRoles, assignRoleToUser, removeRoleFromUser } from "@backend/lib/casbin.ts";
 import { getDefaultAK006Template } from "@backend/constants/default-templates.ts";
@@ -908,9 +909,12 @@ export default new Elysia()
         return status(400, { success: false, message: "Program studi tidak ditemukan" });
       }
 
+      // Auto-generate password from NIM if not provided
+      const rawPassword = body.password || body.nim;
+
       // Validate password
-      if (!body.password || body.password.length < 8) {
-        return status(400, { success: false, message: "Password minimal 8 karakter" });
+      if (rawPassword.length < 8) {
+        return status(400, { success: false, message: "Password minimal 8 karakter (NIM/password terlalu pendek)" });
       }
 
       // Create user
@@ -924,7 +928,7 @@ export default new Elysia()
       });
 
       // Create credential account with hashed password
-      const hashedPw = await hashPassword(body.password);
+      const hashedPw = await hashPassword(rawPassword);
       await Prisma.account.create({
         data: {
           id: randomBytes(16).toString("hex"),
@@ -963,6 +967,15 @@ export default new Elysia()
       });
       const roles = await getUserRoles(user.id);
 
+      // Send welcome email asynchronously (non-blocking)
+      sendNewUserWelcomeEmail({
+        name: body.name,
+        email: body.email,
+        password: rawPassword,
+        userType: "mahasiswa",
+        identifier: body.nim,
+      }).catch((err) => console.error("[Email] Failed to send welcome email for mahasiswa:", err));
+
       return {
         success: true,
         message: "Mahasiswa berhasil ditambahkan",
@@ -974,7 +987,7 @@ export default new Elysia()
       body: t.Object({
         name: t.String(),
         email: t.String(),
-        password: t.String(),
+        password: t.Optional(t.String()),
         nim: t.String(),
         tahunMasuk: t.String(),
         noHp: t.String(),
@@ -1002,9 +1015,12 @@ export default new Elysia()
         });
       }
 
+      // Auto-generate password from NIP if not provided
+      const rawPassword = body.password || body.nip;
+
       // Validate password
-      if (!body.password || body.password.length < 8) {
-        return status(400, { success: false, message: "Password minimal 8 karakter" });
+      if (rawPassword.length < 8) {
+        return status(400, { success: false, message: "Password minimal 8 karakter (NIP/password terlalu pendek)" });
       }
 
       // Validate role exists
@@ -1024,7 +1040,7 @@ export default new Elysia()
       });
 
       // Create credential account with hashed password
-      const hashedPw = await hashPassword(body.password);
+      const hashedPw = await hashPassword(rawPassword);
       await Prisma.account.create({
         data: {
           id: randomBytes(16).toString("hex"),
@@ -1055,6 +1071,17 @@ export default new Elysia()
       });
       const roles = await getUserRoles(user.id);
 
+      // Send welcome email asynchronously (non-blocking)
+      const selectedJabatan = body.jabatan;
+      sendNewUserWelcomeEmail({
+        name: body.name,
+        email: body.email,
+        password: rawPassword,
+        userType: "pegawai",
+        identifier: body.nip,
+        jabatan: selectedJabatan,
+      }).catch((err) => console.error("[Email] Failed to send welcome email for pegawai:", err));
+
       return {
         success: true,
         message: "Pegawai berhasil ditambahkan",
@@ -1066,7 +1093,7 @@ export default new Elysia()
       body: t.Object({
         name: t.String(),
         email: t.String(),
-        password: t.String(),
+        password: t.Optional(t.String()),
         nip: t.String(),
         jabatan: t.String(),
         role: t.String(),
