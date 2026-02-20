@@ -13,7 +13,7 @@ export default new Elysia().post(
 				rememberMe: true,
 			},
 			// This endpoint requires session cookies.
-			headers: headers,
+			headers: headers as Record<string, string>,
 		});
 
 		return data;

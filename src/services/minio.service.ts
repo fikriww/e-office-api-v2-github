@@ -3,18 +3,20 @@ import fs from "node:fs";
 import path from "node:path";
 import env from "env-var";
 
+// Parse S3_ENDPOINT URL (e.g. "http://localhost:9000")
+const s3Url = new URL(env.get("S3_ENDPOINT").required().asString());
+
 export abstract class MinioService {
 	private static client: Client = new Client({
-		endPoint: env.get("MINIO_ENDPOINT").required().asString(),
-		port: env.get("MINIO_PORT").required().asPortNumber(),
-		useSSL: env.get("MINIO_USE_SSL").required().asBoolStrict(),
-		accessKey: env.get("MINIO_ACCESS_KEY").required().asString(),
-		secretKey: env.get("MINIO_SECRET_KEY").required().asString(),
-		region: env.get("MINIO_REGION").required().asString(),
+		endPoint: s3Url.hostname,
+		port: Number(s3Url.port) || (s3Url.protocol === "https:" ? 443 : 9000),
+		useSSL: s3Url.protocol === "https:",
+		accessKey: env.get("S3_ACCESS_KEY").required().asString(),
+		secretKey: env.get("S3_SECRET_KEY").required().asString(),
 	});
 
 	private static bucketName: string = env
-		.get("MINIO_BUCKET_NAME")
+		.get("S3_BUCKET")
 		.required()
 		.asString();
 

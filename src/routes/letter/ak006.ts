@@ -372,8 +372,8 @@ export default new Elysia()
         return status(403, { success: false, message: "Access denied" });
       }
 
-      // Only allow cancellation if letter is still pending at step 1
-      if (letter.status !== "PENDING" || letter.currentStep !== 1) {
+      // Only allow cancellation if letter is still pending at step 0 (revision) or step 1 (initial submission)
+      if (letter.status !== "PENDING" || (letter.currentStep !== 0 && letter.currentStep !== 1)) {
         return status(400, {
           success: false,
           message: "Surat tidak dapat dibatalkan karena sudah diproses",

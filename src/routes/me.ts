@@ -54,7 +54,7 @@ export default new Elysia().use(authGuardPlugin).get(
 						newPassword,
 						revokeOtherSessions: true,
 					},
-					headers,
+					headers: headers as Record<string, string>,
 				});
 				return {
 					success: true,

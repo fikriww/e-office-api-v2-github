@@ -12,7 +12,7 @@ export default new Elysia().post(
 				password: body.password,
 				rememberMe: true,
 			},
-			headers: headers,
+			headers: headers as Record<string, string>,
 		});
 
 		return data;

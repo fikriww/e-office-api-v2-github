@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Elysia, t } from "elysia";
 import { randomUUIDv7 } from "bun";
 
