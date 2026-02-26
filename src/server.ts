@@ -11,7 +11,18 @@ export const app = new Elysia()
 	.use(swagger())
 	.use(
 		cors({
-			origin: ["http://localhost:3000", "http://localhost:8080", "*"],
+			origin: (request) => {
+				const origin = request.headers.get("origin");
+				if (!origin) return true;
+				const allowedOrigins = [
+					"http://localhost:3000",
+					"http://localhost:8080",
+					"http://10.137.58.124:3000",
+					"http://10.137.58.124:8080"
+				];
+				if (allowedOrigins.includes(origin)) return true;
+				return false;
+			},
 			methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
 			credentials: true,
 			allowedHeaders: ["Content-Type", "Authorization", "Accept"],

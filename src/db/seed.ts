@@ -652,7 +652,37 @@ async function main() {
 	}
 
 	// Create demo users for each role
-	const demoUsers = [
+	type MahasiswaDemoUser = {
+		email: string;
+		name: string;
+		roleId: string;
+		type: "mahasiswa";
+		additionalData: {
+			nim: string;
+			tahunMasuk: string;
+			noHp: string;
+			programStudiId: string;
+			departemenId: string;
+		};
+	};
+
+	type PegawaiDemoUser = {
+		email: string;
+		name: string;
+		roleId: string;
+		type: "pegawai";
+		additionalData: {
+			nip: string;
+			jabatan: string;
+			noHp: string;
+			programStudiId: string;
+			departemenId: string;
+		};
+	};
+
+	type DemoUser = MahasiswaDemoUser | PegawaiDemoUser;
+
+	const demoUsers: DemoUser[] = [
 		{
 			email: "mahasiswa@demo.local",
 			name: "Mahasiswa Demo",

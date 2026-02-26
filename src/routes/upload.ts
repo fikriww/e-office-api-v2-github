@@ -29,7 +29,8 @@ export default new Elysia()
                 return {
                     success: true,
                     data: {
-                        url: result.url,
+                        url: `/api/public/files/${objectPrefix}${result.nameReplace}`,
+                        presignedUrl: result.url,
                         filename: result.nameReplace,
                         originalName: body.file.name,
                         mimeType: body.file.type,

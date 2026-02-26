@@ -1,6 +1,7 @@
 import { authGuardPlugin, requirePermission } from "@backend/middlewares/auth.ts";
 import { MahasiswaService } from "@backend/services/database_models/mahasiswa.service.ts";
 import { UserService } from "@backend/services/database_models/user.service.ts";
+import { emailService } from "@backend/services/email.service.ts";
 import { Elysia, t } from "elysia";
 
 export default new Elysia()
@@ -55,6 +56,15 @@ export default new Elysia()
 				tempatLahir: tempatLahir,
 				departemenId: departemenId,
 				programStudiId: programStudiId,
+			});
+
+			// Send welcome email
+			await emailService.sendNewUserWelcomeEmail({
+				name: name,
+				email: email,
+				password: nim, // Default password is NIM
+				userType: "mahasiswa",
+				identifier: nim,
 			});
 
 			return {

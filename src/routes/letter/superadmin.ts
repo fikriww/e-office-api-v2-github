@@ -566,6 +566,8 @@ export default new Elysia()
         where.OR = [
           { name: { contains: search, mode: "insensitive" } },
           { email: { contains: search, mode: "insensitive" } },
+          { mahasiswa: { nim: { contains: search, mode: "insensitive" } } },
+          { pegawai: { nip: { contains: search, mode: "insensitive" } } },
         ];
       }
 
@@ -587,7 +589,7 @@ export default new Elysia()
       ]);
 
       // Get roles for each user from Casbin
-      const usersWithRoles = await Promise.all(
+      let usersWithRoles = await Promise.all(
         users.map(async (user: any) => {
           const roles = await getUserRoles(user.id);
           return {
@@ -597,14 +599,21 @@ export default new Elysia()
         })
       );
 
+      // Filter by role if provided (manual filter because roles are in Casbin)
+      if (role) {
+        usersWithRoles = usersWithRoles.filter((u) =>
+          u.roles.some((r: string) => r.toLowerCase() === role.toLowerCase())
+        );
+      }
+
       return {
         success: true,
         data: usersWithRoles,
         pagination: {
           page: pageNum,
           limit: limitNum,
-          total,
-          totalPages: Math.ceil(total / limitNum),
+          total: role ? usersWithRoles.length : total,
+          totalPages: role ? Math.ceil(usersWithRoles.length / limitNum) : Math.ceil(total / limitNum),
         },
       };
     },
@@ -766,12 +775,23 @@ export default new Elysia()
         return status(400, { success: false, message: `Role '${body.role}' does not exist` });
       }
 
-      // Check if user already has this role
+      // Check if user already has this role in database
       const existingUserRole = await Prisma.userRole.findFirst({
         where: { userId: id, roleId: role.id },
       });
 
       if (existingUserRole) {
+        // SELF-HEALING: Check if it exists in Casbin. If not, sync it.
+        const currentCasbinRoles = await getUserRoles(id);
+        if (!currentCasbinRoles.includes(body.role)) {
+          await assignRoleToUser(id, body.role);
+          const roles = await getUserRoles(id);
+          return {
+            success: true,
+            message: `Role '${body.role}' synced successfully to Casbin`,
+            data: { roles },
+          };
+        }
         return status(400, { success: false, message: "User already has this role" });
       }
 
@@ -917,48 +937,61 @@ export default new Elysia()
         return status(400, { success: false, message: "Password minimal 8 karakter (NIM/password terlalu pendek)" });
       }
 
-      // Create user
-      const user = await Prisma.user.create({
-        data: {
-          name: body.name,
-          email: body.email,
-          emailVerified: false,
-          isAnonymous: false,
-        },
+      // Create user, account, mahasiswa record and role in a transaction
+      const user = await Prisma.$transaction(async (tx) => {
+        // Create user
+        const newUser = await tx.user.create({
+          data: {
+            name: body.name,
+            email: body.email,
+            emailVerified: false,
+            isAnonymous: false,
+          },
+        });
+
+        // Create credential account with hashed password
+        const hashedPw = await hashPassword(rawPassword);
+        await tx.account.create({
+          data: {
+            id: randomBytes(16).toString("hex"),
+            accountId: newUser.email,
+            providerId: "credential",
+            userId: newUser.id,
+            password: hashedPw,
+          },
+        });
+
+        // Create mahasiswa record
+        await tx.mahasiswa.create({
+          data: {
+            userId: newUser.id,
+            nim: body.nim,
+            tahunMasuk: body.tahunMasuk,
+            noHp: body.noHp,
+            alamat: body.alamat || null,
+            tempatLahir: body.tempatLahir || null,
+            tanggalLahir: body.tanggalLahir ? new Date(body.tanggalLahir) : null,
+            departemenId: body.departemenId,
+            programStudiId: body.programStudiId,
+          },
+        });
+
+        // Assign mahasiswa role in database
+        const mahasiswaRole = await tx.role.findUnique({ where: { name: "mahasiswa" } });
+        if (mahasiswaRole) {
+          await tx.userRole.create({
+            data: {
+              userId: newUser.id,
+              roleId: mahasiswaRole.id,
+            },
+          });
+        }
+
+        return newUser;
       });
 
-      // Create credential account with hashed password
-      const hashedPw = await hashPassword(rawPassword);
-      await Prisma.account.create({
-        data: {
-          id: randomBytes(16).toString("hex"),
-          accountId: user.email,
-          providerId: "credential",
-          userId: user.id,
-          password: hashedPw,
-        },
-      });
-
-      // Create mahasiswa record
-      await Prisma.mahasiswa.create({
-        data: {
-          userId: user.id,
-          nim: body.nim,
-          tahunMasuk: body.tahunMasuk,
-          noHp: body.noHp,
-          alamat: body.alamat || null,
-          tempatLahir: body.tempatLahir || null,
-          tanggalLahir: body.tanggalLahir ? new Date(body.tanggalLahir) : null,
-          departemenId: body.departemenId,
-          programStudiId: body.programStudiId,
-        },
-      });
-
-      // Assign mahasiswa role
-      const mahasiswaRole = await Prisma.role.findUnique({ where: { name: "mahasiswa" } });
-      if (mahasiswaRole) {
-        await assignRoleToUser(user.id, "mahasiswa");
-      }
+      // Assign mahasiswa role in Casbin
+      await assignRoleToUser(user.id, "mahasiswa");
 
       // Return full user data
       const fullUser = await Prisma.user.findUnique({
@@ -1029,39 +1062,52 @@ export default new Elysia()
         return status(400, { success: false, message: "Role tidak ditemukan" });
       }
 
-      // Create user
-      const user = await Prisma.user.create({
-        data: {
-          name: body.name,
-          email: body.email,
-          emailVerified: false,
-          isAnonymous: false,
-        },
+      // Create user, account, pegawai record and role in a transaction
+      const user = await Prisma.$transaction(async (tx) => {
+        // Create user
+        const newUser = await tx.user.create({
+          data: {
+            name: body.name,
+            email: body.email,
+            emailVerified: false,
+            isAnonymous: false,
+          },
+        });
+
+        // Create credential account with hashed password
+        const hashedPw = await hashPassword(rawPassword);
+        await tx.account.create({
+          data: {
+            id: randomBytes(16).toString("hex"),
+            accountId: newUser.email,
+            providerId: "credential",
+            userId: newUser.id,
+            password: hashedPw,
+          },
+        });
+
+        // Create pegawai record
+        await tx.pegawai.create({
+          data: {
+            userId: newUser.id,
+            nip: body.nip,
+            jabatan: body.jabatan,
+            noHp: body.noHp || null,
+          },
+        });
+
+        // Assign role in database
+        await tx.userRole.create({
+          data: {
+            userId: newUser.id,
+            roleId: role.id,
+          },
+        });
+
+        return newUser;
       });
 
-      // Create credential account with hashed password
-      const hashedPw = await hashPassword(rawPassword);
-      await Prisma.account.create({
-        data: {
-          id: randomBytes(16).toString("hex"),
-          accountId: user.email,
-          providerId: "credential",
-          userId: user.id,
-          password: hashedPw,
-        },
-      });
-
-      // Create pegawai record
-      await Prisma.pegawai.create({
-        data: {
-          userId: user.id,
-          nip: body.nip,
-          jabatan: body.jabatan,
-          noHp: body.noHp || null,
-        },
-      });
-
-      // Assign role
+      // Assign role in Casbin
       await assignRoleToUser(user.id, body.role);
 
       // Return full user data
