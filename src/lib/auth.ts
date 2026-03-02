@@ -31,6 +31,6 @@ export const auth = betterAuth({
 	plugins: [
 		anonymous(),
 		bearer(),
-		// jwt()
+		jwt()
 	],
 });

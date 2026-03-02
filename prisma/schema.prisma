@@ -474,12 +474,12 @@ enum NotificationType {
   @@map("notification_type")
 }
 
-// model Jwks {
-//   id         String    @id
-//   publicKey  String
-//   privateKey String
-//   createdAt  DateTime
-//   expiresAt  DateTime?
+model Jwks {
+  id         String    @id
+  publicKey  String
+  privateKey String
+  createdAt  DateTime
+  expiresAt  DateTime?
 
-//   @@map("jwks")
-// }
+  @@map("jwks")
+}
