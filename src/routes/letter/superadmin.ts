@@ -917,6 +917,17 @@ export default new Elysia()
         });
       }
 
+      // Check if NIM already exists
+      const existingNim = await Prisma.mahasiswa.findFirst({
+        where: { nim: body.nim },
+      });
+      if (existingNim) {
+        return status(400, {
+          success: false,
+          message: "NIM sudah terdaftar / tidak boleh sama!",
+        });
+      }
+
       // Validate departemen exists
       const dept = await Prisma.departemen.findUnique({ where: { id: body.departemenId } });
       if (!dept) {
@@ -1045,6 +1056,17 @@ export default new Elysia()
         return status(400, {
           success: false,
           message: "Email sudah terdaftar",
+        });
+      }
+
+      // Check if NIP already exists
+      const existingNip = await Prisma.pegawai.findFirst({
+        where: { nip: body.nip },
+      });
+      if (existingNip) {
+        return status(400, {
+          success: false,
+          message: "NIP sudah terdaftar / tidak boleh sama!",
         });
       }
 

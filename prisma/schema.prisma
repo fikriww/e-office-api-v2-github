@@ -173,7 +173,7 @@ model User {
 
 model Mahasiswa {
   id  String @id @default(cuid())
-  nim String
+  nim String @unique
 
   tahunMasuk   String
   noHp         String
