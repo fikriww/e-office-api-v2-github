@@ -386,6 +386,7 @@ export default new Elysia()
             status: "COMPLETED",
             currentStep: STEP_UPA,
             letterNumber: body.letterNumber || letter.letterNumber || letter.temporaryAgenda,
+            signatureUrl: body.signatureUrl || letter.signatureUrl,
             archivedAt: new Date(),
             archivedById: user.id,
           },
@@ -417,6 +418,7 @@ export default new Elysia()
       body: t.Object({
         comments: t.Optional(t.String()),
         letterNumber: t.Optional(t.String()),
+        signatureUrl: t.Optional(t.String()),
       }),
     }
   )
@@ -1411,5 +1413,73 @@ export default new Elysia()
         config: t.Any(),
         versionName: t.Optional(t.String()),
       }),
+    }
+  )
+
+  // ==================== SIGNATURES MANAGEMENT ====================
+
+  // Get all MTU signatures
+  .get(
+    "/signatures/mtu",
+    async ({ status }) => {
+      // Find all active users (we will filter by role via Casbin)
+      const users = await Prisma.user.findMany({
+        where: {
+          deletedAt: null,
+        },
+        include: {
+          pegawai: true
+        }
+      });
+      console.log(`[DEBUG] Found ${users.length} total active users`);
+
+      // Filter by manager_tu role using Casbin (since roles are in Casbin)
+      const mtuUsers = [];
+      for (const user of users) {
+        const roles = await getUserRoles(user.id);
+        const rolesLower = roles.map(r => r.toLowerCase());
+        console.log(`[DEBUG] User ${user.email} (ID: ${user.id}) roles:`, roles);
+
+        // Comprehensive check for MTU roles
+        const isMTU = rolesLower.some(r =>
+          r === "manager_tu" ||
+          r === "manajer_tu" ||
+          r.includes("manajer tu") ||
+          r.includes("manager tu") ||
+          (r.includes("tu") && (r.includes("manajer") || r.includes("manager")))
+        );
+
+        if (isMTU) {
+          console.log(`[DEBUG] User ${user.email} matched as MTU`);
+          mtuUsers.push(user);
+        }
+      }
+
+      const mtuUserIds = mtuUsers.map(u => u.id);
+      console.log(`[DEBUG] Found ${mtuUsers.length} total users with MTU-like roles: ${mtuUserIds.join(', ')}`);
+
+      // Get all signatures for these users
+      const signatures = await Prisma.signature.findMany({
+        where: {
+          userId: { in: mtuUserIds }
+        },
+        include: {
+          user: {
+            include: {
+              pegawai: true
+            }
+          }
+        },
+        orderBy: [
+          { userId: "asc" },
+          { isDefault: "desc" }
+        ]
+      });
+      console.log(`[DEBUG] Found ${signatures.length} signatures for MTU users`);
+
+      return {
+        success: true,
+        data: signatures
+      };
     }
   );

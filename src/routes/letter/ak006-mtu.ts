@@ -81,7 +81,7 @@ export default new Elysia()
       }),
     }
   )
-  // Sign letter
+  // Sign letter (saves signature)
   .post(
     "/:id/sign",
     async ({ params: { id }, body, user, status }) => {
@@ -129,29 +129,9 @@ export default new Elysia()
           body.comments
         );
 
-        // Send notifications
-        const letterTypeName = letter.letterType?.name || 'Surat Pernyataan Masih Kuliah';
-        const mahasiswaName = letter.createdBy?.name || 'Mahasiswa';
-        try {
-          // Notify UPA that letter needs numbering
-          await notificationService.notifyUPALetterSigned(
-            id,
-            mahasiswaName,
-            letterTypeName
-          );
-          // Notify Mahasiswa that letter was signed
-          await notificationService.notifyMahasiswaSigned(
-            letter.createdById,
-            id,
-            letterTypeName
-          );
-        } catch (notifError) {
-          console.error('Failed to send notification:', notifError);
-        }
-
         return {
           success: true,
-          message: "Letter signed and forwarded to UPA for numbering",
+          message: "Letter signed successfully (saved)",
           data: result,
         };
       } catch (error: any) {
@@ -169,6 +149,79 @@ export default new Elysia()
       body: t.Object({
         signatureId: t.Optional(t.String()),
         signatureUrl: t.Optional(t.String()),
+        comments: t.Optional(t.String()),
+      }),
+    }
+  )
+  // Forward letter to UPA
+  .post(
+    "/:id/forward",
+    async ({ params: { id }, body, user, status }) => {
+      const letter = await LetterInstanceService.getById(id);
+
+      if (!letter) {
+        return status(404, { success: false, message: "Letter not found" });
+      }
+
+      if (letter.currentStep !== STEP_MTU) {
+        return status(400, {
+          success: false,
+          message: "Letter is not at MTU stage",
+        });
+      }
+
+      if (!letter.signatureUrl) {
+        return status(400, {
+          success: false,
+          message: "Letter must be signed before forwarding to UPA",
+        });
+      }
+
+      try {
+        const result = await LetterInstanceService.forwardToUPA(
+          id,
+          user.id,
+          body.comments
+        );
+
+        // Send notifications
+        const letterTypeName = letter.letterType?.name || 'Surat Pernyataan Masih Kuliah';
+        const mahasiswaName = letter.createdBy?.name || 'Mahasiswa';
+        try {
+          // Notify UPA that letter needs numbering
+          await notificationService.notifyUPALetterSigned(
+            id,
+            mahasiswaName,
+            letterTypeName
+          );
+          // Notify Mahasiswa that letter was signed (forwarded to UPA)
+          await notificationService.notifyMahasiswaSigned(
+            letter.createdById,
+            id,
+            letterTypeName
+          );
+        } catch (notifError) {
+          console.error('Failed to send notification:', notifError);
+        }
+
+        return {
+          success: true,
+          message: "Letter forwarded to UPA for numbering",
+          data: result,
+        };
+      } catch (error: any) {
+        return status(500, {
+          success: false,
+          message: error.message || "Failed to forward letter",
+        });
+      }
+    },
+    {
+      ...requireRole("manager_tu"),
+      params: t.Object({
+        id: t.String(),
+      }),
+      body: t.Object({
         comments: t.Optional(t.String()),
       }),
     }

@@ -911,7 +911,7 @@ export abstract class LetterInstanceService {
   }
 
   /**
-   * Sign letter (MTU step)
+   * Sign letter (MTU step) - only saves signature, doesn't advance step
    */
   static async signLetter(
     letterId: string,
@@ -927,13 +927,38 @@ export abstract class LetterInstanceService {
     }
 
     // Update letter with signature
-    await Prisma.letterInstance.update({
+    return Prisma.letterInstance.update({
       where: { id: letterId },
       data: {
         signatureUrl,
         updatedAt: new Date(),
       },
+      include: {
+        approvalSteps: true,
+        letterType: true,
+        createdBy: true
+      }
     });
+  }
+
+  /**
+   * Forward letter to UPA (after MTU signature)
+   */
+  static async forwardToUPA(
+    letterId: string,
+    actorId: string,
+    comments?: string
+  ) {
+    const letter = await this.getById(letterId);
+    if (!letter) throw new Error("Letter not found");
+
+    if (letter.currentStep !== STEP_MTU) {
+      throw new Error("Letter is not at MTU step");
+    }
+
+    if (!letter.signatureUrl) {
+      throw new Error("Letter must be signed before forwarding to UPA");
+    }
 
     // Approve the MTU step and move to UPA
     return this.approveStep(letterId, actorId, "manager_tu", comments);
