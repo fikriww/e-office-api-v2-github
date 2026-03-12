@@ -35,9 +35,11 @@ export default new Elysia()
 				set.status = 401;
 				return { message: "Invalid SSO token" };
 			}
-			const ssoData = await ssoRes.json();
+			const ssoData = await ssoRes.json() as any;
 			ssoUser = ssoData.data || ssoData;
-		} catch {
+			console.log("[SSO] Data received from SSO Engine:", JSON.stringify(ssoUser));
+		} catch (err) {
+			console.error("[SSO] Error fetching/parsing SSO user:", err);
 			set.status = 401;
 			return { message: "Invalid SSO token" };
 		}
@@ -45,9 +47,12 @@ export default new Elysia()
 		// Step 3: Ambil email dari field "username" (bukan "email"!)
 		const email = ssoUser?.username;
 		if (!email || typeof email !== "string") {
+			console.error("[SSO] Username missing in SSO payload:", ssoUser);
 			set.status = 401;
 			return { message: "Invalid SSO token payload" };
 		}
+
+		console.log(`[SSO] Processing login for: ${email}, role: ${ssoUser.role}`);
 
 		// Step 4: Cari atau buat user di database lokal
 		let user = await Prisma.user.findUnique({
@@ -56,6 +61,7 @@ export default new Elysia()
 		});
 
 		if (!user) {
+			console.log(`[SSO] User ${email} not found. Creating new user...`);
 			// Auto-register: buat User baru
 			user = await Prisma.user.create({
 				data: {
@@ -66,16 +72,23 @@ export default new Elysia()
 				},
 				include: { userRole: { include: { role: true } } },
 			});
+			console.log(`[SSO] User ${email} created with ID: ${user.id}`);
+		} else {
+			console.log(`[SSO] User ${email} found. ID: ${user.id}, current roles:`, user.userRole.map(ur => ur.role.name));
+		}
 
-			// Mapping SSO role → local role yang bisa di-auto-assign
-			// dosen & staff tidak di-auto-assign karena satu SSO role bisa jadi banyak role lokal
-			const SSO_ROLE_MAP: Record<string, string> = {
-				mahasiswa: "mahasiswa",
-				superadmin: "superadmin",
-			};
+		// Map roles if user doesn't have the expected role
+		// Mapping SSO role → local role yang bisa di-auto-assign
+		const SSO_ROLE_MAP: Record<string, string> = {
+			mahasiswa: "mahasiswa",
+			superadmin: "superadmin",
+		};
 
-			const localRoleName = SSO_ROLE_MAP[ssoUser.role];
-			if (localRoleName) {
+		const localRoleName = SSO_ROLE_MAP[ssoUser.role];
+		if (localRoleName) {
+			const hasRole = user.userRole.some((ur) => ur.role.name === localRoleName);
+			if (!hasRole) {
+				console.log(`[SSO] Assigning role ${localRoleName} to user ${email}`);
 				const localRole = await Prisma.role.findFirst({
 					where: { name: localRoleName },
 				});
@@ -85,23 +98,29 @@ export default new Elysia()
 					});
 					// Sync ke Casbin in-memory
 					await assignRoleToUser(user.id, localRoleName);
+					console.log(`[SSO] Role ${localRoleName} assigned successfully`);
+				} else {
+					console.error(`[SSO] Local role ${localRoleName} not found in database!`);
 				}
+			} else {
+				console.log(`[SSO] User ${email} already has role ${localRoleName}`);
 			}
-
-			// Reload dengan relasi setelah insert
-			user = await Prisma.user.findUnique({
-				where: { id: user.id },
-				include: { userRole: { include: { role: true } } },
-			});
 		}
+
+		// Reload user with roles if needed
+		user = await Prisma.user.findUnique({
+			where: { id: user.id },
+			include: { userRole: { include: { role: true } } },
+		});
 
 		if (!user) {
 			set.status = 500;
-			return { message: "Gagal membuat akun" };
+			return { message: "Gagal memproses akun" };
 		}
 
 		// Step 5: Update nama jika berubah di SSO
 		if (user.name !== ssoUser.name) {
+			console.log(`[SSO] Updating user name from ${user.name} to ${ssoUser.name}`);
 			await Prisma.user.update({
 				where: { id: user.id },
 				data: { name: ssoUser.name },
