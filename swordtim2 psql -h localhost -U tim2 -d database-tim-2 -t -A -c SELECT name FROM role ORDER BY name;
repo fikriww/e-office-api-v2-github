@@ -1,0 +1,23 @@
+           name           
+--------------------------
+ admin_departemen
+ dekan
+ dosen_koordinator
+ dosen_pembimbing
+ ketua_departemen
+ ketua_prodi
+ mahasiswa
+ manager_tu
+ pegawai_ukt
+ petugas_akademik
+ petugas_tu
+ prodi
+ superadmin
+ supervisor_akademik
+ supervisor_kemahasiswaan
+ supervisor_sumberdaya
+ upa
+ wakil_dekan_1
+ wakil_dekan_2
+(19 rows)
+

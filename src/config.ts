@@ -14,6 +14,10 @@ export const config = {
 	DATABASE_URL: env.get("DATABASE_URL").required().asString(),
 	LOCK_STORE: env.get("LOCK_STORE").default("memory").asEnum(["memory"]),
 
+	// SSO
+	SSO_HOST: env.get("SSO_HOST").default("https://apps-fsm.undip.ac.id/sso_api").asString(),
+	FRONTEND_URL: env.get("FRONTEND_URL").default("http://10.137.58.124:20021").asString(),
+
 	// SMTP settings
 	SMTP_HOST: env.get("SMTP_HOST").default("smtp.gmail.com").asString(),
 	SMTP_PORT: env.get("SMTP_PORT").default(587).asPortNumber(),
